@@ -151,10 +151,18 @@
           <ul class="nav flex-column submenu">
             <li class="nav-item">
               <a
-                href="{{ url_for('eta_master.eta_master_upload') }}"
+                href="{{ url_for('master.eta_master_upload') }}"
                 class="nav-link {% if active_page == 'eta_master' %}active{% endif %}"
               >
                 <i class="fa fa-clock-o"></i> ETA
+              </a>
+            </li>
+            <li class="nav-item">
+              <a
+                href="{{ url_for('master.pickup_stations_panel') }}"
+                class="nav-link {% if active_page == 'eta_master' %}active{% endif %}"
+              >
+                <i class="fa fa-map-marker"></i> Pickup Stations
               </a>
             </li>
           </ul>

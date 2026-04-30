@@ -23,7 +23,7 @@ test('admin can insert and delete internal consignment row', async ({ page }) =>
   const row = page.locator('#sheet-body tr').last();
   await row.locator('input.consignment_number').fill(consignmentNumber);
   await row.locator('select.status').selectOption('In Transit');
-  await row.locator('input.pickup_pincode').fill('110017');
+  await row.locator('select.pickup_pincode').selectOption('Kolkata');
   await row.locator('input.drop_pincode').fill('400001');
 
   await page.getByRole('button', { name: /save all/i }).click();
