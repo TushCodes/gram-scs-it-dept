@@ -1,6 +1,6 @@
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from uuid import uuid4
 
 from app import create_app
@@ -31,7 +31,7 @@ class AdminSaveGeocodeFallbackTests(unittest.TestCase):
                 {
                     "consignment_number": consignment_number,
                     "status": "In Transit",
-                    "pickup_pincode": "110017",
+                    "pickup_pincode": "Kolkata",
                     "drop_pincode": "222221",
                 }
             ]
@@ -105,16 +105,12 @@ class AdminSaveGeocodeFallbackTests(unittest.TestCase):
         }
 
         with patch("app.admin.consignment_controller.EtaMasterRecord") as mock_eta_master:
-            mock_eta_master.query.filter_by.return_value.first.return_value = object()
+            mock_eta_master.query.filter_by.return_value.first.return_value = Mock(pickup_location="No")
 
-            with patch(
-                "app.admin.consignment_controller._get_eta_master_pickup_value",
-                return_value="no",
-            ):
-                from app.admin.consignment_controller import _validate_pickup_pincode_against_eta_master
+            from app.admin.consignment_controller import _validate_pickup_pincode_against_eta_master
 
-                with self.assertRaisesRegex(ValueError, "Pickup not available\\."):
-                    _validate_pickup_pincode_against_eta_master("110017")
+            with self.assertRaisesRegex(ValueError, "Pickup not available\\."):
+                _validate_pickup_pincode_against_eta_master("110017")
 
     def test_save_deletes_rows_sent_in_deleted_ids(self):
         self._authenticate_admin_session()
@@ -150,7 +146,7 @@ class AdminSaveGeocodeFallbackTests(unittest.TestCase):
                     "id": keep_id,
                     "consignment_number": keep_number,
                     "status": "In Transit",
-                    "pickup_pincode": "560001",
+                    "pickup_pincode": "Ahmedabad",
                     "drop_pincode": "500001",
                 }
             ],

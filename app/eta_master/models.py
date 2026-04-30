@@ -4,6 +4,26 @@ import hashlib
 from app.models import db
 
 
+class PickupStation(db.Model):
+    __bind_key__ = 'master'
+    __tablename__ = 'pickup_stations'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), unique=True, nullable=False, index=True)
+    pin_code = db.Column(db.String(6), nullable=False)
+    address = db.Column(db.String(1024), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'pin_code': self.pin_code,
+            'address': self.address,
+        }
+
+
 class EtaMasterRecord(db.Model):
     __bind_key__ = 'master'
     __tablename__ = 'eta_master_records'

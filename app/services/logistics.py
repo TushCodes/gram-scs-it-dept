@@ -98,7 +98,7 @@ def geocode_indian_pincode_with_retry(
 	timeout: int = 10
 ) -> Optional[dict]:
 	"""
-	Resolve an Indian pincode to latitude/longitude.
+	Resolve a pickup location or Indian pincode to latitude/longitude.
 
 	Returns:
 		Dict with lat/lng metadata, or None when lookup fails.
@@ -114,12 +114,15 @@ def geocode_indian_pincode_with_retry(
 
 	url = "https://nominatim.openstreetmap.org/search"
 	params = {
-		"postalcode": pincode,
 		"country": "India",
 		"countrycodes": "in",
 		"format": "json",
 		"limit": 1,
 	}
+	if re.fullmatch(INDIAN_PINCODE_REGEX, str(pincode or "")):
+		params["postalcode"] = pincode
+	else:
+		params["q"] = pincode
 	headers = {
 		"User-Agent": "GRAM-SCS-ETA/1.0 (+logistics-geocoding)",
 	}

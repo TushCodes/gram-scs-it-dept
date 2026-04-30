@@ -9,12 +9,23 @@ document.addEventListener("DOMContentLoaded", function () {
 
     var saveUrl = tableBody.dataset.saveUrl || "";
     var existingRows = [];
+    var pickupLocations = [];
     var deletedIds = new Set();
 
     try {
         existingRows = JSON.parse(tableBody.dataset.existingRows || "[]");
     } catch (error) {
         console.error("Failed to parse existing consignment rows.", error);
+    }
+
+    try {
+        pickupLocations = JSON.parse(tableBody.dataset.pickupLocations || "[]");
+    } catch (error) {
+        console.error("Failed to parse pickup location options.", error);
+    }
+
+    if (!pickupLocations.length) {
+        pickupLocations = ["FRK Nagar", "Kolkata", "Ahmedabad", "Patna"];
     }
 
     var statusOptions = [
@@ -56,11 +67,44 @@ document.addEventListener("DOMContentLoaded", function () {
         return "<select class=\"form-select form-select-sm status\">" + opts.join("") + "</select>";
     }
 
+    function buildPickupSelect(value) {
+        var current = (value || "").trim();
+        var opts = ["<option value=''>Select pickup location</option>"];
+
+        if (current && pickupLocations.indexOf(current) === -1) {
+            opts.push("<option value=\"" + escapeHtml(current) + "\" selected>" + escapeHtml(current) + "</option>");
+        }
+
+        pickupLocations.forEach(function (location) {
+            var selected = location === current ? "selected" : "";
+            opts.push("<option value=\"" + escapeHtml(location) + "\" " + selected + ">" + escapeHtml(location) + "</option>");
+        });
+
+        return "<select class=\"form-select form-select-sm pickup_pincode\">" + opts.join("") + "</select>";
+    }
+
     function normalizePincode(value, label, rowNumber) {
         var raw = (value || "").trim();
         if (!/^[1-9][0-9]{5}$/.test(raw)) {
             throw new Error("Row " + rowNumber + ": " + label + " must be a valid 6-digit pincode.");
         }
+        return raw;
+    }
+
+    function normalizePickupLocation(value, rowNumber) {
+        var raw = (value || "").trim();
+        var isLegacyPincode = /^[1-9][0-9]{5}$/.test(raw);
+
+        if (!raw) {
+            throw new Error("Row " + rowNumber + ": Pickup location is required.");
+        }
+
+        if (pickupLocations.indexOf(raw) === -1 && !isLegacyPincode) {
+            throw new Error(
+                "Row " + rowNumber + ": Pickup location must be one of FRK Nagar, Kolkata, Ahmedabad, or Patna."
+            );
+        }
+
         return raw;
     }
 
@@ -72,7 +116,7 @@ document.addEventListener("DOMContentLoaded", function () {
         tr.innerHTML =
             "<td><input class=\"form-control form-control-sm consignment_number\" maxlength=\"16\" value=\"" + escapeHtml(source.consignment_number || "") + "\" /></td>" +
             "<td>" + buildStatusSelect(source.status) + "</td>" +
-            "<td><input class=\"form-control form-control-sm pickup_pincode\" maxlength=\"6\" value=\"" + escapeHtml(source.pickup_pincode || "") + "\" placeholder=\"110001\" /></td>" +
+            "<td>" + buildPickupSelect(source.pickup_pincode || "") + "</td>" +
             "<td><input class=\"form-control form-control-sm drop_pincode\" maxlength=\"6\" value=\"" + escapeHtml(source.drop_pincode || "") + "\" placeholder=\"400001\" /></td>" +
             "<td class=\"text-center\"><button type=\"button\" class=\"btn btn-sm btn-outline-danger remove-row\">Delete</button></td>";
 
@@ -106,7 +150,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
 
-            var normalizedPickupPincode = normalizePincode(pickupPincode, "Pickup pincode", rowNumber);
+            var normalizedPickupPincode = normalizePickupLocation(pickupPincode, rowNumber);
             var normalizedDropPincode = normalizePincode(dropPincode, "Drop pincode", rowNumber);
 
             rows.push({

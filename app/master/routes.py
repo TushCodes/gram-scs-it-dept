@@ -9,14 +9,96 @@ from sqlalchemy import asc, desc, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app import limiter
-from app.eta_master.models import EtaMasterRecord
-from app.eta_master.models import PickupStation
-from app.models import Consignment, db
 from app.admin.auth import require_admin
+from app.eta_master.models import EtaMasterRecord, PickupStation
+from app.models import Consignment, db
 
 logger = logging.getLogger(__name__)
 
-eta_master_bp = Blueprint('eta_master', __name__, template_folder='templates')
+master_bp = Blueprint('master', __name__, template_folder='templates', url_prefix='/master')
+
+# ============================================================================
+# PICKUP STATIONS
+# ============================================================================
+
+
+@master_bp.route('/pickup-stations', methods=['GET'], endpoint='pickup_stations_panel')
+@require_admin
+def pickup_stations_panel():
+    stations = PickupStation.query.order_by(PickupStation.name.asc()).all()
+    return render_template('master/pickup_stations.html', pickup_stations=[s.to_dict() for s in stations], active_page='eta_master')
+
+
+@master_bp.route('/pickup-stations/list', methods=['GET'], endpoint='pickup_stations_list')
+def pickup_stations_list():
+    stations = PickupStation.query.order_by(PickupStation.name.asc()).all()
+    return jsonify([s.name for s in stations])
+
+
+@master_bp.route('/pickup-stations', methods=['POST'], endpoint='pickup_stations_create')
+@require_admin
+def pickup_stations_create():
+    payload = request.get_json(silent=True) or {}
+    name = (payload.get('name') or '').strip()
+    pin = (payload.get('pin_code') or '').strip()
+    address = (payload.get('address') or '').strip() or None
+
+    if not name or not pin:
+        return jsonify({'success': False, 'message': 'Name and pin_code are required.'}), 400
+
+    if not re.fullmatch(r'[1-9][0-9]{5}', pin):
+        return jsonify({'success': False, 'message': 'pin_code must be a valid 6-digit pincode.'}), 400
+
+    existing = PickupStation.query.filter_by(name=name).first()
+    if existing:
+        return jsonify({'success': False, 'message': 'Pickup station with that name already exists.'}), 400
+
+    station = PickupStation(name=name, pin_code=pin, address=address)
+    db.session.add(station)
+    db.session.commit()
+    return jsonify({'success': True, 'station': station.to_dict()})
+
+
+@master_bp.route('/pickup-stations/<int:station_id>', methods=['PUT'], endpoint='pickup_stations_update')
+@require_admin
+def pickup_stations_update(station_id):
+    payload = request.get_json(silent=True) or {}
+    station = db.session.get(PickupStation, station_id)
+    if not station:
+        return jsonify({'success': False, 'message': 'Station not found.'}), 404
+
+    name = payload.get('name')
+    pin = payload.get('pin_code')
+    address = payload.get('address')
+
+    if name:
+        station.name = str(name).strip()
+    if pin:
+        pin = str(pin).strip()
+        if not re.fullmatch(r'[1-9][0-9]{5}', pin):
+            return jsonify({'success': False, 'message': 'pin_code must be a valid 6-digit pincode.'}), 400
+        station.pin_code = pin
+    station.address = str(address).strip() or None
+
+    db.session.commit()
+    return jsonify({'success': True, 'station': station.to_dict()})
+
+
+@master_bp.route('/pickup-stations/<int:station_id>', methods=['DELETE'], endpoint='pickup_stations_delete')
+@require_admin
+def pickup_stations_delete(station_id):
+    station = db.session.get(PickupStation, station_id)
+    if not station:
+        return jsonify({'success': False, 'message': 'Station not found.'}), 404
+    db.session.delete(station)
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+# ============================================================================
+# ETA MASTER (moved from eta_master blueprint)
+# ============================================================================
+
 
 HEADER_ALIASES = {
     # SNO variations
@@ -314,14 +396,6 @@ SORTABLE_COLUMNS = {
 }
 
 
-def _redirect_to_eta_master(mode='view', page=1, per_page=100):
-    return redirect(url_for('eta_master.eta_master_upload', mode=mode, page=page, per_page=per_page))
-
-
-def _load_eta_master_record(record_id):
-    return db.session.get(EtaMasterRecord, record_id)
-
-
 def _get_pagination_params():
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 100, type=int)
@@ -400,270 +474,82 @@ def _paginate_eta_master(page, per_page, search='', search_type='pin_code', sort
 
     if pagination.total and page > pagination.pages:
         pagination = db.paginate(stmt, page=pagination.pages, per_page=per_page, error_out=False)
-
     return pagination
 
 
-@eta_master_bp.route('/eta_master/pickup-stations', methods=['GET'], endpoint='pickup_stations_panel')
+@master_bp.route('/eta', methods=['GET'], endpoint='eta_master_upload')
 @require_admin
-def pickup_stations_panel():
-    stations = PickupStation.query.order_by(PickupStation.name.asc()).all()
-    return render_template('eta_master/pickup_stations.html', pickup_stations=[s.to_dict() for s in stations], active_page='eta_master')
-
-
-@eta_master_bp.route('/eta_master/pickup-stations/list', methods=['GET'], endpoint='pickup_stations_list')
-def pickup_stations_list():
-    stations = PickupStation.query.order_by(PickupStation.name.asc()).all()
-    return jsonify([s.name for s in stations])
-
-
-@eta_master_bp.route('/eta_master/pickup-stations', methods=['POST'], endpoint='pickup_stations_create')
-@require_admin
-def pickup_stations_create():
-    payload = request.get_json(silent=True) or {}
-    name = (payload.get('name') or '').strip()
-    pin = (payload.get('pin_code') or '').strip()
-    address = (payload.get('address') or '').strip() or None
-
-    if not name or not pin:
-        return jsonify({'success': False, 'message': 'Name and pin_code are required.'}), 400
-
-    if not re.fullmatch(r'[1-9][0-9]{5}', pin):
-        return jsonify({'success': False, 'message': 'pin_code must be a valid 6-digit pincode.'}), 400
-
-    existing = PickupStation.query.filter_by(name=name).first()
-    if existing:
-        return jsonify({'success': False, 'message': 'Pickup station with that name already exists.'}), 400
-
-    station = PickupStation(name=name, pin_code=pin, address=address)
-    db.session.add(station)
-    db.session.commit()
-    return jsonify({'success': True, 'station': station.to_dict()})
-
-
-@eta_master_bp.route('/eta_master/pickup-stations/<int:station_id>', methods=['PUT'], endpoint='pickup_stations_update')
-@require_admin
-def pickup_stations_update(station_id):
-    payload = request.get_json(silent=True) or {}
-    station = db.session.get(PickupStation, station_id)
-    if not station:
-        return jsonify({'success': False, 'message': 'Station not found.'}), 404
-
-    name = payload.get('name')
-    pin = payload.get('pin_code')
-    address = payload.get('address')
-
-    if name:
-        station.name = str(name).strip()
-    if pin:
-        pin = str(pin).strip()
-        if not re.fullmatch(r'[1-9][0-9]{5}', pin):
-            return jsonify({'success': False, 'message': 'pin_code must be a valid 6-digit pincode.'}), 400
-        station.pin_code = pin
-    station.address = str(address).strip() or None
-
-    db.session.commit()
-    return jsonify({'success': True, 'station': station.to_dict()})
-
-
-@eta_master_bp.route('/eta_master/pickup-stations/<int:station_id>', methods=['DELETE'], endpoint='pickup_stations_delete')
-@require_admin
-def pickup_stations_delete(station_id):
-    station = db.session.get(PickupStation, station_id)
-    if not station:
-        return jsonify({'success': False, 'message': 'Station not found.'}), 404
-    db.session.delete(station)
-    db.session.commit()
-    return jsonify({'success': True})
-
-
-def _parse_workbook(file_stream):
-    workbook = load_workbook(file_stream, read_only=True, data_only=True)
-    worksheet = workbook.active
-
-    rows = worksheet.iter_rows(values_only=True)
-    header_row = next(rows, None)
-    if not header_row:
-        raise ValueError('Excel file is empty.')
-
-    header_map = _map_headers(header_row)
-    required_missing = [field for field in REQUIRED_FIELDS if field not in header_map.values()]
-    if required_missing:
-        raise ValueError(f'Missing required columns: {", ".join(required_missing)}')
-
-    parsed_rows = []
-    for row_number, row in enumerate(rows, start=2):
-        normalized = {}
-        for index, value in enumerate(row):
-            field_name = header_map.get(index)
-            if field_name:
-                normalized[field_name] = value
-        parsed_rows.append((row_number, normalized))
-
-    return parsed_rows
-
-
-@eta_master_bp.route('/eta-master', methods=['GET', 'POST'])
-@limiter.limit('10 per minute', methods=['POST'])
 def eta_master_upload():
-    summary = None
     page, per_page = _get_pagination_params()
-    edit_mode = request.args.get('mode', 'view').lower() == 'edit'
     search, search_type, sort_by, sort_dir = _get_search_params()
     pagination = _paginate_eta_master(page, per_page, search, search_type, sort_by, sort_dir)
-
-    if request.method == 'POST':
-        upload = request.files.get('file')
-        if not upload or not upload.filename:
-            flash('Please choose an Excel file to import.', 'error')
-            return redirect(url_for('eta_master.eta_master_upload'))
-
-        if not upload.filename.lower().endswith('.xlsx'):
-            flash('Only .xlsx Excel files are supported.', 'error')
-            return redirect(url_for('eta_master.eta_master_upload'))
-
-        try:
-            parsed_rows = _parse_workbook(BytesIO(upload.read()))
-            inserted, updated, skipped, errors = _upsert_records(parsed_rows, upload.filename)
-            summary = {
-                'inserted': inserted,
-                'updated': updated,
-                'skipped': skipped,
-                'errors': errors,
-                'total_rows': len(parsed_rows),
-            }
-            flash(
-                f'Import complete. Inserted {inserted}, updated {updated}, errors {len(errors)}.',
-                'success',
-            )
-            pagination = _paginate_eta_master(1, per_page, search, search_type, sort_by, sort_dir)
-        except Exception as error:
-            logger.exception('ETA master import failed')
-            flash(f'Import failed: {error}', 'error')
-
-    start_record = 0
-    end_record = 0
-    if pagination.total:
-        start_record = ((pagination.page - 1) * pagination.per_page) + 1
-        end_record = start_record + len(pagination.items) - 1
-
     return render_template(
-        'eta_master/index.html',
-        summary=summary,
+        'master/eta_master.html',
         records=pagination.items,
-        pagination=pagination,
+        total=pagination.total,
+        pages=pagination.pages,
+        current_page=page,
         per_page=per_page,
-        start_record=start_record,
-        end_record=end_record,
-        edit_mode=edit_mode,
         search=search,
         search_type=search_type,
         sort_by=sort_by,
         sort_dir=sort_dir,
+        active_page='eta_master',
     )
 
 
-@eta_master_bp.route('/eta-master/records/new', methods=['POST'])
-@limiter.limit('30 per minute')
-def eta_master_create_record():
-    page = request.form.get('page', 1, type=int)
-    per_page = request.form.get('per_page', 100, type=int)
+@master_bp.route('/eta/upload', methods=['POST'], endpoint='eta_master_upload_file')
+@limiter.limit('10 per minute')
+@require_admin
+def eta_master_upload_file():
+    if 'file' not in request.files or not request.files['file'].filename:
+        flash('No file selected. Please choose an Excel file.', 'danger')
+        return redirect(url_for('master.eta_master_upload'))
+
+    file = request.files['file']
+    if not file.filename.lower().endswith('.xlsx'):
+        flash('Only .xlsx files are allowed.', 'danger')
+        return redirect(url_for('master.eta_master_upload'))
 
     try:
-        record_data = _build_record_payload(request.form)
-        record_data['source_filename'] = 'manual entry'
-        record_data['source_row_number'] = None
+        workbook = load_workbook(file, data_only=True)
+        sheet = workbook.active
 
-        duplicate = db.session.query(EtaMasterRecord).filter_by(record_key=record_data['record_key']).first()
-        if duplicate:
-            flash('A record with the same values already exists.', 'error')
-            return _redirect_to_eta_master(mode='edit', page=page, per_page=per_page)
+        if sheet.max_row < 2:
+            flash('Excel file is empty or has no data rows.', 'danger')
+            return redirect(url_for('master.eta_master_upload'))
 
-        db.session.add(EtaMasterRecord(**record_data))
-        db.session.commit()
-        flash('Record added successfully.', 'success')
-    except ValueError as error:
-        db.session.rollback()
-        flash(f'Add failed: {error}', 'error')
-    except Exception as error:
-        db.session.rollback()
-        logger.exception('ETA master create failed')
-        flash(f'Add failed: {error}', 'error')
+        header_row = tuple(sheet.iter_rows(min_row=1, max_row=1, values_only=True))
+        if not header_row or not any(header_row):
+            flash('Excel file has no headers.', 'danger')
+            return redirect(url_for('master.eta_master_upload'))
 
-    return _redirect_to_eta_master(mode='view', page=1, per_page=per_page)
+        header_map = _map_headers(header_row[0])
+        required_cols = {alias: col for col, alias in header_map.items() if alias in REQUIRED_FIELDS}
 
+        if set(required_cols.values()) != set(REQUIRED_FIELDS):
+            flash(f'Missing required columns: {set(REQUIRED_FIELDS) - set(required_cols.values())}', 'danger')
+            return redirect(url_for('master.eta_master_upload'))
 
-@eta_master_bp.route('/eta-master/records/<int:record_id>/update', methods=['POST'])
-@limiter.limit('30 per minute')
-def eta_master_update_record(record_id):
-    page = request.form.get('page', 1, type=int)
-    per_page = request.form.get('per_page', 100, type=int)
+        rows_data = []
+        for row_idx, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+            if not row or not any(row):
+                continue
+            row_dict = {}
+            for col_idx, alias in header_map.items():
+                if alias:
+                    row_dict[alias] = row[col_idx] if col_idx < len(row) else None
+            rows_data.append((row_idx, row_dict))
 
-    record = _load_eta_master_record(record_id)
-    if not record:
-        flash('Record not found.', 'error')
-        return _redirect_to_eta_master(mode='view', page=page, per_page=per_page)
+        inserted, updated, skipped, errors = _upsert_records(rows_data, file.filename)
+        if errors:
+            error_summary = '; '.join([f"Row {e['row']}: {e['error']}" for e in errors[:5]])
+            flash(f'Inserted: {inserted}, Updated: {updated}, Errors: {len(errors)}. {error_summary}...', 'warning')
+        else:
+            flash(f'Successfully imported {inserted} new records and updated {updated} existing records.', 'success')
 
-    try:
-        record_data = _build_record_payload(request.form)
-        duplicate = db.session.query(EtaMasterRecord).filter(
-            EtaMasterRecord.record_key == record_data['record_key'],
-            EtaMasterRecord.id != record.id,
-        ).first()
-        if duplicate:
-            flash('Another record with the same values already exists.', 'error')
-            return _redirect_to_eta_master(mode='edit', page=page, per_page=per_page)
-
-        record.sno = record_data['sno']
-        record.record_key = record_data['record_key']
-        record.pin_code = record_data['pin_code']
-        record.pickup_station = record_data['pickup_station']
-        record.state_ut = record_data['state_ut']
-        record.city = record_data['city']
-        record.pickup_location = record_data['pickup_location']
-        record.delivery_location = record_data['delivery_location']
-        record.tat_in_days = record_data['tat_in_days']
-        record.zone = record_data['zone']
-        record.source_filename = 'manual edit'
-        record.source_row_number = None
-        record.updated_at = datetime.utcnow()
-
-        db.session.commit()
-        flash('Record updated successfully.', 'success')
-    except ValueError as error:
-        db.session.rollback()
-        flash(f'Update failed: {error}', 'error')
-    except Exception as error:
-        db.session.rollback()
-        logger.exception('ETA master update failed')
-        flash(f'Update failed: {error}', 'error')
-
-    return _redirect_to_eta_master(mode='view', page=page, per_page=per_page)
-
-
-@eta_master_bp.route('/eta-master/records/<int:record_id>/delete', methods=['POST'])
-@limiter.limit('30 per minute')
-def eta_master_delete_record(record_id):
-    page = request.form.get('page', 1, type=int)
-    per_page = request.form.get('per_page', 100, type=int)
-
-    record = _load_eta_master_record(record_id)
-    if not record:
-        flash('Record not found.', 'error')
-        return _redirect_to_eta_master(mode='view', page=page, per_page=per_page)
-
-    try:
-        db.session.delete(record)
-        db.session.commit()
-        flash('Record deleted successfully.', 'success')
-    except Exception as error:
-        db.session.rollback()
-        logger.exception('ETA master delete failed')
-        flash(f'Delete failed: {error}', 'error')
-
-    return _redirect_to_eta_master(mode='view', page=page, per_page=per_page)
-
-
-@eta_master_bp.route('/eta-master/api/count', methods=['GET'])
-def eta_master_count():
-    return jsonify({'count': EtaMasterRecord.query.count()})
+        return redirect(url_for('master.eta_master_upload'))
+    except Exception as e:
+        logger.exception('Error during ETA master file upload')
+        flash(f'Error processing file: {str(e)}', 'danger')
+        return redirect(url_for('master.eta_master_upload'))

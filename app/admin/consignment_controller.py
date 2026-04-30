@@ -51,13 +51,30 @@ def consignments_panel():
             }
             for c in consignments
         ]
-            return render_template("admin/consignments.html", consignments=rows)
+        from app.eta_master.models import PickupStation
+        stations = PickupStation.query.order_by(PickupStation.name.asc()).all()
+        pickup_locations = [s.name for s in stations]
+        return render_template(
+            "admin/consignments.html",
+            consignments=rows,
+            pickup_locations=pickup_locations,
+        )
     except (OperationalError, DatabaseError):
         logger.exception("Database error loading admin panel")
-            return render_template("admin/consignments.html", consignments=[], error="Unable to load data. Please try again.")
+        return render_template(
+            "admin/consignments.html",
+            consignments=[],
+            pickup_locations=[],
+            error="Unable to load data. Please try again.",
+        )
     except Exception:
         logger.exception("Unexpected error in admin panel")
-            return render_template("admin/consignments.html", consignments=[], error="An unexpected error occurred.")
+        return render_template(
+            "admin/consignments.html",
+            consignments=[],
+            pickup_locations=[],
+            error="An unexpected error occurred.",
+        )
 
 
 def _build_eta_payload(consignment_number, pickup_pincode, drop_pincode):
@@ -120,22 +137,37 @@ def _build_eta_payload(consignment_number, pickup_pincode, drop_pincode):
 
 
 def _validate_pickup_pincode_against_eta_master(pickup_pincode):
-    """Validate that pickup pincode exists in ETA master and pickup is available.
-    
-    Raises ValueError if:
-    - Pincode not found in ETA master
-    - Pincode found but pickup_location is explicitly set to 'No'
+    """Validate pickup location choice or legacy pincode value.
+
+    The admin sheet now uses fixed pickup locations, but existing rows may still
+    contain legacy pincodes. Both formats are accepted here.
     """
-    eta_master_record = EtaMasterRecord.query.filter_by(pin_code=pickup_pincode).first()
-    if not eta_master_record:
-        raise ValueError(ETA_MASTER_PICKUP_NOT_AVAILABLE_MESSAGE)
+    pickup_value = (pickup_pincode or "").strip()
+    if not pickup_value:
+        raise ValueError("Pickup location is required.")
 
-    # Check if pickup_location is explicitly marked as 'No' (case-insensitive)
-    pickup_location = str(eta_master_record.pickup_location).strip().lower() if eta_master_record.pickup_location else ""
-    if pickup_location == "no":
-        raise ValueError(ETA_MASTER_PICKUP_NOT_AVAILABLE_MESSAGE)
+    # If the value matches a configured pickup station name, resolve to its pin
+    from app.eta_master.models import PickupStation
+    station = PickupStation.query.filter_by(name=pickup_value).first()
+    if station:
+        return station.pin_code
 
-    return eta_master_record
+    if re.fullmatch(r"[1-9][0-9]{5}", pickup_value):
+        eta_master_record = EtaMasterRecord.query.filter_by(pin_code=pickup_value).first()
+        if not eta_master_record:
+            raise ValueError(ETA_MASTER_PICKUP_NOT_AVAILABLE_MESSAGE)
+
+        pickup_location = (
+            str(eta_master_record.pickup_location).strip().lower()
+            if eta_master_record.pickup_location
+            else ""
+        )
+        if pickup_location == "no":
+            raise ValueError(ETA_MASTER_PICKUP_NOT_AVAILABLE_MESSAGE)
+
+        return pickup_value
+
+    raise ValueError("Pickup location must be a known station name or a valid 6-digit pincode.")
 
 
 def _normalize_header(value):
@@ -176,7 +208,7 @@ def consignments_save():
             try:
                 consignment_number = normalize_consignment_number(row.get("consignment_number"))
                 status = normalize_status(row.get("status"))
-                pickup_pincode = normalize_indian_pincode(row.get("pickup_pincode"), "pickup_pincode")
+                pickup_pincode = _validate_pickup_pincode_against_eta_master(row.get("pickup_pincode"))
                 drop_pincode = normalize_indian_pincode(row.get("drop_pincode"), "drop_pincode")
             except ValueError as error:
                 return jsonify({"success": False, "message": str(error)}), 400
@@ -314,7 +346,7 @@ def consignments_import_excel():
 
             consignment_number = normalize_consignment_number(row[consignment_idx])
             status = normalize_status(row[status_idx])
-            pickup_pincode = normalize_indian_pincode(row[pickup_idx], "pickup_pincode")
+            pickup_pincode = _validate_pickup_pincode_against_eta_master(row[pickup_idx])
             drop_pincode = normalize_indian_pincode(row[drop_idx], "drop_pincode")
 
             if consignment_number in existing_numbers or consignment_number in file_seen:
