@@ -155,7 +155,7 @@
         </div>
 
         <h1 class="track-title">Track Your Shipment</h1>
-        <p class="track-subtitle">Enter a consignment number to check current movement status, route pins, and estimated arrival time.</p>
+        <p class="track-subtitle">Enter a consignment number to check the current status and the ETA saved in the internal consignment sheet.</p>
 
         <form method="POST" class="track-form" autocomplete="off">
             <input
@@ -196,21 +196,12 @@
                         <p class="track-metric-value">{{ consignment.drop_pincode or 'Not available' }}</p>
                     </div>
                     <div class="track-metric">
-                        <span class="track-label">Estimated Arrival</span>
+                        <span class="track-label">ETA</span>
                         <p class="track-metric-value">{{ consignment.eta or 'Not available' }}</p>
                     </div>
                 </div>
             </div>
 
-            <div class="track-card track-map-card">
-                <span class="track-label">Route Overview</span>
-                <div
-                    id="map"
-                    data-pickup-lat="{{ consignment.pickup_lat }}"
-                    data-pickup-lng="{{ consignment.pickup_lng }}"
-                    data-drop-lat="{{ consignment.drop_lat }}"
-                    data-drop-lng="{{ consignment.drop_lng }}"></div>
-            </div>
         </div>
     </div>
     {% endif %}
@@ -247,6 +238,5 @@
 {% block scripts_extra %}
 {{ super() }}
 <script src="{{ url_for('static', filename='js/menu.js') }}"></script>
-<script src="{{ url_for('static', filename='js/track.js') }}"></script>
 <script src="{{ url_for('static', filename='js/track-tooltip.js') }}"></script>
 {% endblock %}
