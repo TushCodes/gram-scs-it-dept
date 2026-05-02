@@ -1,8 +1,6 @@
 import io
-import json
 import logging
 import re
-from datetime import datetime
 
 from flask import flash, jsonify, redirect, render_template, request, send_file, url_for
 from openpyxl import Workbook, load_workbook
@@ -15,20 +13,14 @@ from sqlalchemy.exc import DatabaseError, IntegrityError, OperationalError
 from app import limiter
 from app.admin import admin_bp
 from app.admin.auth import require_admin
-from app.eta_master.models import EtaMasterRecord
 from app.models import Consignment, db
 from app.services.logistics import (
-    calculate_eta_breakdown_with_retry,
-    geocode_indian_pincode_with_retry,
-    get_fallback_eta,
     normalize_consignment_number,
     normalize_indian_pincode,
     normalize_status,
 )
 
 logger = logging.getLogger(__name__)
-
-ETA_MASTER_PICKUP_NOT_AVAILABLE_MESSAGE = "Pickup not available."
 
 
 @admin_bp.route("/admin/consignments", methods=["GET"], endpoint="consignments_panel")
@@ -43,28 +35,19 @@ def consignments_panel():
                 "status": c.status,
                 "pickup_pincode": c.pickup_pincode,
                 "drop_pincode": c.drop_pincode,
-                "pickup_lat": c.pickup_lat,
-                "pickup_lng": c.pickup_lng,
-                "drop_lat": c.drop_lat,
-                "drop_lng": c.drop_lng,
                 "eta": c.eta,
             }
             for c in consignments
         ]
-        from app.eta_master.models import PickupStation
-        stations = PickupStation.query.order_by(PickupStation.name.asc()).all()
-        pickup_locations = [s.name for s in stations]
         return render_template(
             "admin/consignments.html",
             consignments=rows,
-            pickup_locations=pickup_locations,
         )
     except (OperationalError, DatabaseError):
         logger.exception("Database error loading admin panel")
         return render_template(
             "admin/consignments.html",
             consignments=[],
-            pickup_locations=[],
             error="Unable to load data. Please try again.",
         )
     except Exception:
@@ -72,102 +55,8 @@ def consignments_panel():
         return render_template(
             "admin/consignments.html",
             consignments=[],
-            pickup_locations=[],
             error="An unexpected error occurred.",
         )
-
-
-def _build_eta_payload(consignment_number, pickup_pincode, drop_pincode):
-    pickup_location = geocode_indian_pincode_with_retry(pickup_pincode)
-    drop_location = geocode_indian_pincode_with_retry(drop_pincode)
-
-    pickup_lat = pickup_location["lat"] if pickup_location else None
-    pickup_lng = pickup_location["lng"] if pickup_location else None
-    drop_lat = drop_location["lat"] if drop_location else None
-    drop_lng = drop_location["lng"] if drop_location else None
-
-    if pickup_lat is not None and pickup_lng is not None and drop_lat is not None and drop_lng is not None:
-        eta_breakdown = calculate_eta_breakdown_with_retry(
-            pickup_lat,
-            pickup_lng,
-            drop_lat,
-            drop_lng,
-        )
-        if eta_breakdown is None:
-            eta = get_fallback_eta()
-            eta_breakdown = {
-                "eta": eta,
-                "duration_seconds": None,
-                "duration_hours": None,
-                "distance_km": None,
-                "calculated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "route_source": "fallback",
-                "formula": "ETA fallback used because route lookup failed",
-            }
-        else:
-            eta = eta_breakdown["eta"]
-    else:
-        eta = get_fallback_eta()
-        eta_breakdown = {
-            "eta": eta,
-            "duration_seconds": None,
-            "duration_hours": None,
-            "distance_km": None,
-            "calculated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "route_source": "fallback_geocode",
-            "formula": "ETA fallback used because one or more pincodes could not be geocoded",
-        }
-
-    eta_breakdown["consignment_number"] = consignment_number
-    eta_breakdown["pickup_pincode"] = pickup_pincode
-    eta_breakdown["drop_pincode"] = drop_pincode
-    eta_breakdown["pickup_coords"] = [pickup_lat, pickup_lng]
-    eta_breakdown["drop_coords"] = [drop_lat, drop_lng]
-    eta_breakdown["pickup_geocode_source"] = pickup_location.get("source") if pickup_location else None
-    eta_breakdown["drop_geocode_source"] = drop_location.get("source") if drop_location else None
-
-    return {
-        "pickup_lat": pickup_lat,
-        "pickup_lng": pickup_lng,
-        "drop_lat": drop_lat,
-        "drop_lng": drop_lng,
-        "eta": eta,
-        "eta_debug_json": json.dumps(eta_breakdown),
-    }
-
-
-def _validate_pickup_pincode_against_eta_master(pickup_pincode):
-    """Validate pickup location choice or legacy pincode value.
-
-    The admin sheet now uses fixed pickup locations, but existing rows may still
-    contain legacy pincodes. Both formats are accepted here.
-    """
-    pickup_value = (pickup_pincode or "").strip()
-    if not pickup_value:
-        raise ValueError("Pickup location is required.")
-
-    # If the value matches a configured pickup station name, resolve to its pin
-    from app.eta_master.models import PickupStation
-    station = PickupStation.query.filter_by(name=pickup_value).first()
-    if station:
-        return station.pin_code
-
-    if re.fullmatch(r"[1-9][0-9]{5}", pickup_value):
-        eta_master_record = EtaMasterRecord.query.filter_by(pin_code=pickup_value).first()
-        if not eta_master_record:
-            raise ValueError(ETA_MASTER_PICKUP_NOT_AVAILABLE_MESSAGE)
-
-        pickup_location = (
-            str(eta_master_record.pickup_location).strip().lower()
-            if eta_master_record.pickup_location
-            else ""
-        )
-        if pickup_location == "no":
-            raise ValueError(ETA_MASTER_PICKUP_NOT_AVAILABLE_MESSAGE)
-
-        return pickup_value
-
-    raise ValueError("Pickup location must be a known station name or a valid 6-digit pincode.")
 
 
 def _normalize_header(value):
@@ -208,10 +97,12 @@ def consignments_save():
             try:
                 consignment_number = normalize_consignment_number(row.get("consignment_number"))
                 status = normalize_status(row.get("status"))
-                pickup_pincode = _validate_pickup_pincode_against_eta_master(row.get("pickup_pincode"))
+                pickup_pincode = normalize_indian_pincode(row.get("pickup_pincode"), "pickup_pincode")
                 drop_pincode = normalize_indian_pincode(row.get("drop_pincode"), "drop_pincode")
             except ValueError as error:
                 return jsonify({"success": False, "message": str(error)}), 400
+
+            eta = str(row.get("eta") or "").strip()
 
             if consignment_number in seen_numbers:
                 return jsonify({
@@ -219,9 +110,6 @@ def consignments_save():
                     "message": f"Duplicate consignment number in sheet: {consignment_number}"
                 }), 400
             seen_numbers.add(consignment_number)
-
-            _validate_pickup_pincode_against_eta_master(pickup_pincode)
-            eta_payload = _build_eta_payload(consignment_number, pickup_pincode, drop_pincode)
 
             if row_id:
                 try:
@@ -246,12 +134,7 @@ def consignments_save():
                 "status": status,
                 "pickup_pincode": pickup_pincode,
                 "drop_pincode": drop_pincode,
-                "pickup_lat": eta_payload["pickup_lat"],
-                "pickup_lng": eta_payload["pickup_lng"],
-                "drop_lat": eta_payload["drop_lat"],
-                "drop_lng": eta_payload["drop_lng"],
-                "eta": eta_payload["eta"],
-                "eta_debug_json": eta_payload["eta_debug_json"],
+                "eta": eta,
             })
 
         for deleted_id in validated_deleted_ids:
@@ -268,12 +151,7 @@ def consignments_save():
             consignment.status = row["status"]
             consignment.pickup_pincode = row["pickup_pincode"]
             consignment.drop_pincode = row["drop_pincode"]
-            consignment.pickup_lat = row["pickup_lat"]
-            consignment.pickup_lng = row["pickup_lng"]
-            consignment.drop_lat = row["drop_lat"]
-            consignment.drop_lng = row["drop_lng"]
             consignment.eta = row["eta"]
-            consignment.eta_debug_json = row["eta_debug_json"]
 
         db.session.commit()
         return jsonify({
@@ -330,6 +208,7 @@ def consignments_import_excel():
         status_idx = header_index.get("status")
         pickup_idx = header_index.get("pickup_pincode")
         drop_idx = header_index.get("drop_pincode")
+        eta_idx = header_index.get("eta")
 
         if None in (consignment_idx, status_idx, pickup_idx, drop_idx):
             flash("Required headers: consignment_number, status, pickup_pincode, drop_pincode", "danger")
@@ -346,27 +225,20 @@ def consignments_import_excel():
 
             consignment_number = normalize_consignment_number(row[consignment_idx])
             status = normalize_status(row[status_idx])
-            pickup_pincode = _validate_pickup_pincode_against_eta_master(row[pickup_idx])
+            pickup_pincode = normalize_indian_pincode(row[pickup_idx], "pickup_pincode")
             drop_pincode = normalize_indian_pincode(row[drop_idx], "drop_pincode")
+            eta = str(row[eta_idx] if eta_idx is not None and row[eta_idx] is not None else "").strip()
 
             if consignment_number in existing_numbers or consignment_number in file_seen:
                 skipped_count += 1
                 continue
-
-            _validate_pickup_pincode_against_eta_master(pickup_pincode)
-            eta_payload = _build_eta_payload(consignment_number, pickup_pincode, drop_pincode)
 
             consignment = Consignment(
                 consignment_number=consignment_number,
                 status=status,
                 pickup_pincode=pickup_pincode,
                 drop_pincode=drop_pincode,
-                pickup_lat=eta_payload["pickup_lat"],
-                pickup_lng=eta_payload["pickup_lng"],
-                drop_lat=eta_payload["drop_lat"],
-                drop_lng=eta_payload["drop_lng"],
-                eta=eta_payload["eta"],
-                eta_debug_json=eta_payload["eta_debug_json"],
+                eta=eta,
             )
 
             db.session.add(consignment)
@@ -404,10 +276,6 @@ def consignments_export_excel():
             "status",
             "pickup_pincode",
             "drop_pincode",
-            "pickup_lat",
-            "pickup_lng",
-            "drop_lat",
-            "drop_lng",
             "eta",
         ])
 
@@ -418,10 +286,6 @@ def consignments_export_excel():
                 row.status,
                 row.pickup_pincode,
                 row.drop_pincode,
-                row.pickup_lat,
-                row.pickup_lng,
-                row.drop_lat,
-                row.drop_lng,
                 row.eta,
             ])
 
@@ -505,6 +369,7 @@ def consignments_import_template_excel():
             "status",
             "pickup_pincode",
             "drop_pincode",
+            "eta",
         ])
 
         sheet.append([
@@ -512,6 +377,7 @@ def consignments_import_template_excel():
             "In Transit",
             "110017",
             "400001",
+            "2-3 days",
         ])
 
         output = io.BytesIO()

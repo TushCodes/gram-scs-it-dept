@@ -48,15 +48,15 @@
         <tr>
           <th style="min-width: 160px;">Consignment #</th>
           <th style="min-width: 170px;">Status</th>
-          <th style="min-width: 170px;">Pickup Location</th>
-          <th style="min-width: 170px;">Drop Pincode</th>
+          <th style="min-width: 140px;">Pickup Pincode</th>
+          <th style="min-width: 140px;">Drop Pincode</th>
+          <th style="min-width: 160px;">ETA</th>
           <th style="width: 85px;">Action</th>
         </tr>
       </thead>
       <tbody
         id="sheet-body"
         data-existing-rows="{{ consignments | tojson | forceescape }}"
-        data-pickup-locations="{{ pickup_locations | tojson | forceescape }}"
         data-save-url="{{ url_for('admin.consignments_save') }}"></tbody>
     </table>
   </div>
