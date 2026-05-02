@@ -57,40 +57,17 @@ class TrackRouteTests(unittest.TestCase):
         self.assertIn(b"Consignment not found. Please check the number and try again.", response.data)
         mock_logger.info.assert_any_call("Shipment not found for consignment %s", "HOME123")
 
-    def test_found_consignment_refreshes_eta(self):
+    def test_found_consignment_uses_saved_eta_without_refreshing_coordinates(self):
         record = FakeConsignment()
+        record.eta = "2026-04-05 12:00"
         fake_query = MagicMock()
         fake_query.filter_by.return_value.first.return_value = record
 
         fake_model = MagicMock()
         fake_model.query = fake_query
 
-        geocode_values = [
-            {"lat": 28.6139, "lng": 77.209, "source": "mock"},
-            {"lat": 19.076, "lng": 72.8777, "source": "mock"},
-        ]
-
-        def geocode_side_effect(*args, **kwargs):
-            return geocode_values.pop(0)
-
-        eta_breakdown = {
-            "eta": "2026-04-05 12:00",
-            "duration_seconds": 3600,
-            "duration_hours": 1.0,
-            "osrm_base_hours": 1.0,
-            "truck_multiplier": 1.7,
-            "truck_buffer_hours": 6.0,
-            "adjusted_truck_hours": 7.0,
-            "distance_km": 10.0,
-            "calculated_at": "2026-04-05 05:00",
-            "route_source": "mock",
-            "formula": "Adjusted_Truck_ETA = OSRM_base_time * 1.7 + 6",
-        }
-
         with (
             patch("app.track.routes.TrackConsignment", fake_model),
-            patch("app.track.routes.geocode_indian_pincode_with_retry", side_effect=geocode_side_effect),
-            patch("app.track.routes.calculate_eta_breakdown_with_retry", return_value=eta_breakdown),
             patch("app.track.routes.db.session.commit") as mock_commit,
             patch("app.track.routes.logger") as mock_logger,
         ):
@@ -99,10 +76,17 @@ class TrackRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"2026-04-05 12:00", response.data)
         self.assertEqual(record.eta, "2026-04-05 12:00")
-        self.assertEqual(record.pickup_lat, 28.6139)
-        self.assertEqual(record.drop_lng, 72.8777)
-        mock_commit.assert_called_once()
+        self.assertIsNone(record.pickup_lat)
+        self.assertIsNone(record.drop_lng)
+        mock_commit.assert_not_called()
         mock_logger.info.assert_any_call("Shipment found for consignment %s", "ABC123")
+
+    def test_track_page_does_not_render_map_markup(self):
+        response = self.client.get("/track")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(b'id="map"', response.data)
+        self.assertNotIn(b"track.js", response.data)
 
 
 if __name__ == "__main__":

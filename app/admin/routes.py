@@ -8,8 +8,7 @@ import io
 from app import limiter
 from app.admin import admin_bp
 from app.admin.auth import require_admin
-from app.eta_master.models import EtaMasterRecord
-from app.models import Consignment, Lead, NewsletterSubscriber
+from app.models import Consignment, Lead, NewsletterSubscriber, db
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +66,6 @@ def generate_backup():
             ("consignments", Consignment, {"eta_debug_json"}),
             ("leads", Lead, set()),
             ("newsletter_subscribers", NewsletterSubscriber, set()),
-            ("eta_master_records", EtaMasterRecord, set()),
         ]
 
         backup_payload = {}

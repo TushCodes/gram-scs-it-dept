@@ -219,15 +219,15 @@ def create_app():
 
     from app.main.routes import main_bp
     from app.track.routes import track_bp
-    from app.master.routes import master_bp
     from app.pages.routes import pages_bp
     from app.admin.routes import admin_bp
+    from app.eta_master.routes import eta_master_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(track_bp)
-    app.register_blueprint(master_bp)
     app.register_blueprint(pages_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(eta_master_bp)
 
     @app.route('/health/db')
     def database_health():
