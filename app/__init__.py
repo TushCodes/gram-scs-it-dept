@@ -216,6 +216,13 @@ def create_app():
     app.register_blueprint(pages_bp)
     app.register_blueprint(admin_bp)
 
+    @app.route('/health')
+    def health():
+        return jsonify({
+            'status': 'ok',
+            'message': 'Application is healthy',
+        }), 200
+
     @app.route('/health/db')
     def database_health():
         try:

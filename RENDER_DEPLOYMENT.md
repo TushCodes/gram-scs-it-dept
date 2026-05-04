@@ -63,7 +63,7 @@ This application is PostgreSQL-only and is intended to use Supabase in productio
 2. Paste the Supabase pooler URL from [.env.render.example](.env.render.example) into `DATABASE_URL` in Render.
 3. Set `ADMIN_PASSWORD_HASH` to a unique production hash and keep it out of the repository.
 4. Keep `AUTO_CREATE_TABLES=false` so production never mutates schema on boot.
-5. Verify connectivity via `/health/db` and functional routes like `/track`.
+5. Verify startup via `/health`, then confirm database connectivity via `/health/db` and functional routes like `/track`.
 
 ### 5. Deploy
 
@@ -121,6 +121,7 @@ To disable:
 ### **Port Issues**
 - Render uses port 10000 by default
 - Gunicorn command already configured in `Procfile` and `render.yaml`
+- Render health checks should use `/health` for startup readiness; use `/health/db` for database verification
 - Do NOT expose port in Flask code
 
 ### **Static Files Not Loading**
@@ -202,10 +203,12 @@ Render dashboard → Deployments → "Deploy latest"
 ```bash
 # From Render dashboard
 # Or use curl to check health
+curl https://<service-name>.onrender.com/health
 curl https://<service-name>.onrender.com/track
 curl https://<service-name>.onrender.com/health/db
 ```
 
+The `/health` endpoint returns HTTP 200 when the application is serving.
 The `/health/db` endpoint returns HTTP 200 when PostgreSQL is reachable and HTTP 503 when the connection fails.
 
 ## File Structure for Deployment

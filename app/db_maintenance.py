@@ -47,9 +47,16 @@ def ensure_consignment_columns_async(dsn, log=None):
     This keeps app startup non-blocking so the site can open even if the
     database is slow to respond.
     """
+    active_logger = log or logger
+
+    def worker():
+        try:
+            ensure_consignment_columns(dsn, active_logger)
+        except Exception as exc:
+            active_logger.error("Consignment schema repair failed: %s", exc)
+
     worker = threading.Thread(
-        target=ensure_consignment_columns,
-        args=(dsn, log),
+        target=worker,
         daemon=True,
         name="consignment-schema-repair",
     )
