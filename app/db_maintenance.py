@@ -1,4 +1,5 @@
 import logging
+import threading
 
 import psycopg2
 
@@ -38,3 +39,19 @@ def ensure_consignment_columns(dsn, log=None):
         active_logger.info("Consignment schema check complete.")
     finally:
         conn.close()
+
+
+def ensure_consignment_columns_async(dsn, log=None):
+    """Run the schema repair in a background daemon thread.
+
+    This keeps app startup non-blocking so the site can open even if the
+    database is slow to respond.
+    """
+    worker = threading.Thread(
+        target=ensure_consignment_columns,
+        args=(dsn, log),
+        daemon=True,
+        name="consignment-schema-repair",
+    )
+    worker.start()
+    return worker
