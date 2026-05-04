@@ -188,12 +188,22 @@
             <div class="track-card track-meta-card">
                 <div class="track-metrics">
                     <div class="track-metric">
-                        <span class="track-label">Pickup Pincode</span>
+                        <span class="track-label">Pickup</span>
+                        {% if consignment.pickup_address %}
+                        <p class="track-metric-value track-address">{{ consignment.pickup_address }}</p>
+                        <p class="track-metric-subtext">{{ consignment.pickup_pincode or '' }}</p>
+                        {% else %}
                         <p class="track-metric-value">{{ consignment.pickup_pincode or 'Not available' }}</p>
+                        {% endif %}
                     </div>
                     <div class="track-metric">
-                        <span class="track-label">Drop Pincode</span>
+                        <span class="track-label">Drop</span>
+                        {% if consignment.drop_address %}
+                        <p class="track-metric-value track-address">{{ consignment.drop_address }}</p>
+                        <p class="track-metric-subtext">{{ consignment.drop_pincode or '' }}</p>
+                        {% else %}
                         <p class="track-metric-value">{{ consignment.drop_pincode or 'Not available' }}</p>
+                        {% endif %}
                     </div>
                     <div class="track-metric">
                         <span class="track-label">ETA</span>

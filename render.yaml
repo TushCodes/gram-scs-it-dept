@@ -34,7 +34,6 @@ services:
         value: "10"
       - key: LOG_LEVEL
         value: INFO
-      # Set DATABASE_URL and MASTER_DATABASE_URL in Render using the Supabase
-      # pooler URLs from .env.render.example. Both must point at the same
-      # Supabase database unless you intentionally use a separate master DB.
+      # Set DATABASE_URL in Render using the Supabase pooler URL from
+      # .env.render.example.
     autoDeploy: true

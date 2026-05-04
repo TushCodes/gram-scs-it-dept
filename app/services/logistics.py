@@ -36,6 +36,9 @@ def normalize_status(raw_value):
 
 def normalize_indian_pincode(raw_value, field_name):
 	value = (raw_value or "").strip()
+	# Allow empty (optional) pincodes
+	if value == "":
+		return ""
 	if not INDIAN_PINCODE_REGEX.fullmatch(value):
 		raise ValueError(f"{field_name} must be a valid 6-digit Indian pincode.")
 	return value

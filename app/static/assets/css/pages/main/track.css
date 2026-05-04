@@ -381,6 +381,18 @@
     word-break: break-word;
 }
 
+.track-address {
+    font-size: 1.18rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.track-metric-subtext {
+    font-size: 0.88rem;
+    color: var(--track-muted);
+    margin-top: 0.25rem;
+}
+
 #map {
     height: min(420px, 58vh);
     border-radius: 12px;

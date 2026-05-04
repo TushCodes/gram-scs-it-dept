@@ -52,7 +52,9 @@ def create_backup():
                 "consignment_number": row.consignment_number,
                 "status": row.status,
                 "pickup_pincode": row.pickup_pincode,
+                "pickup_address": getattr(row, "pickup_address", None),
                 "drop_pincode": row.drop_pincode,
+                "drop_address": getattr(row, "drop_address", None),
                 "pickup_lat": row.pickup_lat,
                 "pickup_lng": row.pickup_lng,
                 "drop_lat": row.drop_lat,
@@ -113,7 +115,9 @@ def restore_backup(backup_file):
 
             entity.status = item.get("status")
             entity.pickup_pincode = item.get("pickup_pincode")
+            entity.pickup_address = item.get("pickup_address")
             entity.drop_pincode = item.get("drop_pincode")
+            entity.drop_address = item.get("drop_address")
             entity.pickup_lat = item.get("pickup_lat")
             entity.pickup_lng = item.get("pickup_lng")
             entity.drop_lat = item.get("drop_lat")

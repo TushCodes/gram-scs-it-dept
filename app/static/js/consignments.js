@@ -58,6 +58,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function normalizePincode(value, label, rowNumber) {
         var raw = (value || "").trim();
+        if (raw === "") {
+            return "";
+        }
         if (!/^[1-9][0-9]{5}$/.test(raw)) {
             throw new Error("Row " + rowNumber + ": " + label + " must be a valid 6-digit pincode.");
         }
@@ -73,7 +76,9 @@ document.addEventListener("DOMContentLoaded", function () {
             "<td><input class=\"form-control form-control-sm consignment_number\" maxlength=\"16\" value=\"" + escapeHtml(source.consignment_number || "") + "\" /></td>" +
             "<td>" + buildStatusSelect(source.status) + "</td>" +
             "<td><input class=\"form-control form-control-sm pickup_pincode\" maxlength=\"6\" value=\"" + escapeHtml(source.pickup_pincode || "") + "\" placeholder=\"110017\" /></td>" +
+            "<td><input class=\"form-control form-control-sm pickup_address\" value=\"" + escapeHtml(source.pickup_address || "") + "\" placeholder=\"Pickup address (optional)\" /></td>" +
             "<td><input class=\"form-control form-control-sm drop_pincode\" maxlength=\"6\" value=\"" + escapeHtml(source.drop_pincode || "") + "\" placeholder=\"400001\" /></td>" +
+            "<td><input class=\"form-control form-control-sm drop_address\" value=\"" + escapeHtml(source.drop_address || "") + "\" placeholder=\"Drop address (optional)\" /></td>" +
             "<td><input class=\"form-control form-control-sm eta\" maxlength=\"100\" value=\"" + escapeHtml(source.eta || "") + "\" placeholder=\"e.g. 2-3 days\" /></td>" +
             "<td class=\"text-center\"><button type=\"button\" class=\"btn btn-sm btn-outline-danger remove-row\">Delete</button></td>";
 
@@ -101,7 +106,9 @@ document.addEventListener("DOMContentLoaded", function () {
             var consignmentNumber = tr.querySelector(".consignment_number").value.trim();
             var status = tr.querySelector(".status").value.trim();
             var pickupPincode = tr.querySelector(".pickup_pincode").value.trim();
+            var pickupAddress = (tr.querySelector(".pickup_address") && tr.querySelector(".pickup_address").value.trim()) || "";
             var dropPincode = tr.querySelector(".drop_pincode").value.trim();
+            var dropAddress = (tr.querySelector(".drop_address") && tr.querySelector(".drop_address").value.trim()) || "";
             var eta = tr.querySelector(".eta").value.trim();
 
             if (!consignmentNumber && !status && !pickupPincode && !dropPincode && !eta) {
@@ -116,7 +123,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 consignment_number: consignmentNumber,
                 status: status,
                 pickup_pincode: normalizedPickupPincode,
+                pickup_address: pickupAddress,
                 drop_pincode: normalizedDropPincode,
+                drop_address: dropAddress,
                 eta: eta
             });
         });
