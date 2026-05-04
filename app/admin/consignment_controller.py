@@ -8,7 +8,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
-from sqlalchemy.exc import DatabaseError, IntegrityError, OperationalError
+from sqlalchemy.exc import DatabaseError, IntegrityError, OperationalError, ProgrammingError
 
 from app import limiter
 from app.admin import admin_bp
@@ -21,6 +21,19 @@ from app.services.logistics import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _is_missing_column_error(error):
+    """Return True when the database rejected a query because a column is absent."""
+    original = getattr(error, "orig", None)
+    if original is None:
+        return False
+
+    pgcode = getattr(original, "pgcode", None)
+    if pgcode == "42703":
+        return True
+
+    return original.__class__.__name__ == "UndefinedColumn"
 
 
 @admin_bp.route("/admin/consignments", methods=["GET"], endpoint="consignments_panel")
@@ -44,6 +57,22 @@ def consignments_panel():
         return render_template(
             "admin/consignments.html",
             consignments=rows,
+        )
+    except ProgrammingError as error:
+        db.session.rollback()
+        if _is_missing_column_error(error):
+            logger.exception("Schema mismatch loading admin panel")
+            return render_template(
+                "admin/consignments.html",
+                consignments=[],
+                error="Database schema needs an update. Missing consignment fields.",
+            )
+
+        logger.exception("Database error loading admin panel")
+        return render_template(
+            "admin/consignments.html",
+            consignments=[],
+            error="Unable to load data. Please try again.",
         )
     except (OperationalError, DatabaseError):
         logger.exception("Database error loading admin panel")
@@ -170,6 +199,14 @@ def consignments_save():
         db.session.rollback()
         logger.exception("Integrity error in admin save")
         return jsonify({"success": False, "message": "Duplicate consignment number already exists."}), 400
+    except ProgrammingError as error:
+        db.session.rollback()
+        if _is_missing_column_error(error):
+            logger.exception("Schema mismatch in admin save")
+            return jsonify({"success": False, "message": "Database schema needs an update. Missing consignment fields."}), 500
+
+        logger.exception("Database error in admin save")
+        return jsonify({"success": False, "message": "Database connection error. Please try again."}), 500
     except (OperationalError, DatabaseError):
         db.session.rollback()
         logger.exception("Database error in admin save")

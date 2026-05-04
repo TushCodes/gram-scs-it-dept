@@ -10,6 +10,7 @@ import logging
 from sqlalchemy import text
 from werkzeug.exceptions import HTTPException
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from app.db_maintenance import ensure_consignment_columns
 
 # Configure logging
 logging.basicConfig(
@@ -192,6 +193,11 @@ def create_app():
 
     db.init_app(app)
     limiter.init_app(app)
+
+    try:
+        ensure_consignment_columns(app.config['SQLALCHEMY_DATABASE_URI'], logger)
+    except Exception:
+        logger.exception('Failed to ensure consignment schema at startup')
 
     auto_create_tables = _should_auto_create_tables()
     if auto_create_tables:
