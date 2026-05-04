@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 
 # Configure required environment variables before importing app modules.
 os.environ.setdefault("DATABASE_URL", "postgresql://user:pass@localhost:5432/gramscs")
-os.environ.setdefault("MASTER_DATABASE_URL", "postgresql://user:pass@localhost:5432/gramscs_master")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-admin-session-auth")
 os.environ.setdefault("ADMIN_USERNAME", "admin")
 os.environ.setdefault("ADMIN_PASSWORD_HASH", "scrypt:32768:8:1$yFUNQ6eCe1ScMEcQ$d94441786edd350236b9340455e3302df2cbb8cf12ba94311abf8d2f1c52b75a20efc1c7a7a8ffaa0357c3b9e0f246dea70c4ea368f0346072f03f55325f913b")
@@ -72,11 +71,10 @@ class AdminSessionAuthTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response.headers["Location"].endswith("/admin/login"))
 
-    @patch("app.admin.routes.EtaMasterRecord")
     @patch("app.admin.routes.NewsletterSubscriber")
     @patch("app.admin.routes.Lead")
     @patch("app.admin.routes.Consignment")
-    def test_generate_backup_returns_download_file(self, mock_consignment, mock_lead, mock_newsletter, mock_eta_master):
+    def test_generate_backup_returns_download_file(self, mock_consignment, mock_lead, mock_newsletter):
         with self.client.session_transaction() as session_data:
             session_data[ADMIN_SESSION_KEY] = True
             session_data["admin_username"] = "admin"
@@ -110,24 +108,13 @@ class AdminSessionAuthTests(unittest.TestCase):
             email="sub@example.com",
         )
 
-        mock_eta_row = SimpleNamespace(
-            __table__=SimpleNamespace(columns=[
-                SimpleNamespace(name="id"),
-                SimpleNamespace(name="pin_code"),
-            ]),
-            id=3,
-            pin_code="110017",
-        )
-
         mock_consignment.id.asc.return_value = "ignored"
         mock_lead.id.asc.return_value = "ignored"
         mock_newsletter.id.asc.return_value = "ignored"
-        mock_eta_master.id.asc.return_value = "ignored"
 
         mock_consignment.query.order_by.return_value.all.return_value = [mock_consignment_row]
         mock_lead.query.order_by.return_value.all.return_value = [mock_lead_row]
         mock_newsletter.query.order_by.return_value.all.return_value = [mock_newsletter_row]
-        mock_eta_master.query.order_by.return_value.all.return_value = [mock_eta_row]
 
         response = self.client.get("/admin/generate-backup")
 
@@ -141,7 +128,6 @@ class AdminSessionAuthTests(unittest.TestCase):
         self.assertIn("consignments", payload)
         self.assertIn("leads", payload)
         self.assertIn("newsletter_subscribers", payload)
-        self.assertIn("eta_master_records", payload)
         self.assertIn("metadata", payload)
         self.assertNotIn("eta_debug_json", payload["consignments"][0])
 

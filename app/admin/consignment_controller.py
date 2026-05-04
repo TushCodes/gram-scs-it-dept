@@ -34,7 +34,9 @@ def consignments_panel():
                 "consignment_number": c.consignment_number,
                 "status": c.status,
                 "pickup_pincode": c.pickup_pincode,
+                "pickup_address": getattr(c, "pickup_address", None),
                 "drop_pincode": c.drop_pincode,
+                "drop_address": getattr(c, "drop_address", None),
                 "eta": c.eta,
             }
             for c in consignments
@@ -133,7 +135,9 @@ def consignments_save():
                 "consignment_number": consignment_number,
                 "status": status,
                 "pickup_pincode": pickup_pincode,
+                "pickup_address": str(row.get("pickup_address") or "").strip(),
                 "drop_pincode": drop_pincode,
+                "drop_address": str(row.get("drop_address") or "").strip(),
                 "eta": eta,
             })
 
@@ -150,7 +154,9 @@ def consignments_save():
             consignment.consignment_number = row["consignment_number"]
             consignment.status = row["status"]
             consignment.pickup_pincode = row["pickup_pincode"]
+            consignment.pickup_address = row.get("pickup_address")
             consignment.drop_pincode = row["drop_pincode"]
+            consignment.drop_address = row.get("drop_address")
             consignment.eta = row["eta"]
 
         db.session.commit()
@@ -208,10 +214,13 @@ def consignments_import_excel():
         status_idx = header_index.get("status")
         pickup_idx = header_index.get("pickup_pincode")
         drop_idx = header_index.get("drop_pincode")
+        pickup_address_idx = header_index.get("pickup_address")
+        drop_address_idx = header_index.get("drop_address")
         eta_idx = header_index.get("eta")
 
-        if None in (consignment_idx, status_idx, pickup_idx, drop_idx):
-            flash("Required headers: consignment_number, status, pickup_pincode, drop_pincode", "danger")
+        # Required headers: consignment_number and status. Pincodes/addresses/eta are optional.
+        if None in (consignment_idx, status_idx):
+            flash("Required headers: consignment_number, status", "danger")
             return redirect(url_for("admin.consignments_panel"))
 
         existing_numbers = {c.consignment_number for c in Consignment.query.with_entities(Consignment.consignment_number).all()}
@@ -225,8 +234,10 @@ def consignments_import_excel():
 
             consignment_number = normalize_consignment_number(row[consignment_idx])
             status = normalize_status(row[status_idx])
-            pickup_pincode = normalize_indian_pincode(row[pickup_idx], "pickup_pincode")
-            drop_pincode = normalize_indian_pincode(row[drop_idx], "drop_pincode")
+            pickup_pincode = normalize_indian_pincode(row[pickup_idx] if pickup_idx is not None and row[pickup_idx] is not None else "", "pickup_pincode")
+            drop_pincode = normalize_indian_pincode(row[drop_idx] if drop_idx is not None and row[drop_idx] is not None else "", "drop_pincode")
+            pickup_address = str(row[pickup_address_idx] if pickup_address_idx is not None and row[pickup_address_idx] is not None else "").strip()
+            drop_address = str(row[drop_address_idx] if drop_address_idx is not None and row[drop_address_idx] is not None else "").strip()
             eta = str(row[eta_idx] if eta_idx is not None and row[eta_idx] is not None else "").strip()
 
             if consignment_number in existing_numbers or consignment_number in file_seen:
@@ -237,7 +248,9 @@ def consignments_import_excel():
                 consignment_number=consignment_number,
                 status=status,
                 pickup_pincode=pickup_pincode,
+                pickup_address=pickup_address,
                 drop_pincode=drop_pincode,
+                drop_address=drop_address,
                 eta=eta,
             )
 
@@ -275,7 +288,9 @@ def consignments_export_excel():
             "consignment_number",
             "status",
             "pickup_pincode",
+            "pickup_address",
             "drop_pincode",
+            "drop_address",
             "eta",
         ])
 
@@ -285,7 +300,9 @@ def consignments_export_excel():
                 row.consignment_number,
                 row.status,
                 row.pickup_pincode,
+                getattr(row, "pickup_address", ""),
                 row.drop_pincode,
+                getattr(row, "drop_address", ""),
                 row.eta,
             ])
 
@@ -314,14 +331,16 @@ def consignments_export_pdf():
         doc = SimpleDocTemplate(output, pagesize=landscape(A4), leftMargin=24, rightMargin=24, topMargin=24, bottomMargin=24)
         styles = getSampleStyleSheet()
 
-        table_data = [["ID", "Consignment #", "Status", "Pickup", "Drop", "ETA"]]
+        table_data = [["ID", "Consignment #", "Status", "Pickup Pincode", "Pickup Address", "Drop Pincode", "Drop Address", "ETA"]]
         for row in rows:
             table_data.append([
                 str(row.id),
                 row.consignment_number or "",
                 row.status or "",
                 row.pickup_pincode or "",
+                getattr(row, "pickup_address", "") or "",
                 row.drop_pincode or "",
+                getattr(row, "drop_address", "") or "",
                 row.eta or "",
             ])
 
@@ -368,7 +387,9 @@ def consignments_import_template_excel():
             "consignment_number",
             "status",
             "pickup_pincode",
+            "pickup_address",
             "drop_pincode",
+            "drop_address",
             "eta",
         ])
 
@@ -376,7 +397,9 @@ def consignments_import_template_excel():
             "CN001",
             "In Transit",
             "110017",
+            "Some Street, New Delhi",
             "400001",
+            "Some Area, Mumbai",
             "2-3 days",
         ])
 

@@ -151,18 +151,6 @@ def _require_database_uri():
     return raw_uri
 
 
-def _resolve_master_database_uri():
-    """Resolve the ETA master database URL, defaulting to the main database locally."""
-    raw_uri = os.getenv('MASTER_DATABASE_URL', '').strip() or _require_database_uri()
-
-    raw_uri = _normalize_postgres_uri(raw_uri)
-
-    if not raw_uri.startswith('postgresql://'):
-        raise RuntimeError('MASTER_DATABASE_URL must be a PostgreSQL URL (postgresql://...).')
-
-    return raw_uri
-
-
 def _normalize_postgres_uri(raw_uri):
     """Normalize postgres URIs and enforce SSL for Supabase hosts."""
     # Some platforms expose postgres:// which SQLAlchemy does not accept.
@@ -186,9 +174,6 @@ def create_app():
 
     # DATABASE CONFIG
     app.config['SQLALCHEMY_DATABASE_URI'] = _require_database_uri()
-    app.config['SQLALCHEMY_BINDS'] = {
-        'master': _resolve_master_database_uri(),
-    }
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         # Supabase/Render-safe defaults; overridable via env vars.
@@ -208,8 +193,6 @@ def create_app():
     db.init_app(app)
     limiter.init_app(app)
 
-    from app.eta_master.models import EtaMasterRecord
-
     auto_create_tables = _should_auto_create_tables()
     if auto_create_tables:
         with app.app_context():
@@ -221,13 +204,11 @@ def create_app():
     from app.track.routes import track_bp
     from app.pages.routes import pages_bp
     from app.admin.routes import admin_bp
-    from app.eta_master.routes import eta_master_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(track_bp)
     app.register_blueprint(pages_bp)
     app.register_blueprint(admin_bp)
-    app.register_blueprint(eta_master_bp)
 
     @app.route('/health/db')
     def database_health():
