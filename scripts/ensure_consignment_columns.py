@@ -5,7 +5,9 @@ Ensure the `consignment` table has the columns expected by the current model.
 Usage:
   DATABASE_URL="postgresql://user:pass@host:5432/dbname" python scripts/ensure_consignment_columns.py
 
-The script is idempotent and safe to run multiple times.
+Use this as the one-time migration step for older Supabase databases before
+deploying production traffic. The script is idempotent and safe to run multiple
+times.
 """
 import os
 import sys

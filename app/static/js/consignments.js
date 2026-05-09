@@ -2,6 +2,8 @@ document.addEventListener("DOMContentLoaded", function () {
     var tableBody = document.getElementById("sheet-body");
     var saveButton = document.getElementById("save-btn");
     var addRowButton = document.getElementById("add-row-btn");
+    var editModal = new bootstrap.Modal(document.getElementById("editConsignmentModal"));
+    var modalSaveBtn = document.getElementById("modal-save-btn");
 
     if (!tableBody || !saveButton || !addRowButton) {
         return;
@@ -10,19 +12,14 @@ document.addEventListener("DOMContentLoaded", function () {
     var saveUrl = tableBody.dataset.saveUrl || "";
     var existingRows = [];
     var deletedIds = new Set();
+    var currentEditingRow = null; // Track which row is being edited
+    var isCreatingRow = false;
 
     try {
         existingRows = JSON.parse(tableBody.dataset.existingRows || "[]");
     } catch (error) {
         console.error("Failed to parse existing consignment rows.", error);
     }
-
-    var statusOptions = [
-        "Pickup Scheduled",
-        "In Transit",
-        "Out for Delivery",
-        "Delivered"
-    ];
 
     function showStatus(message, type) {
         var el = document.getElementById("status-msg");
@@ -44,47 +41,125 @@ document.addEventListener("DOMContentLoaded", function () {
             .replaceAll("'", "&#39;");
     }
 
-    function buildStatusSelect(value) {
-        var current = value || "";
-        var opts = ["<option value=''>Select</option>"];
-
-        statusOptions.forEach(function (status) {
-            var selected = status === current ? "selected" : "";
-            opts.push("<option value=\"" + escapeHtml(status) + "\" " + selected + ">" + escapeHtml(status) + "</option>");
-        });
-
-        return "<select class=\"form-select form-select-sm status\">" + opts.join("") + "</select>";
+    function validatePincode(value) {
+        var raw = (value || "").trim();
+        if (raw === "") {
+            return true; // Allow empty
+        }
+        if (!/^[1-9][0-9]{5}$/.test(raw)) {
+            return false;
+        }
+        return true;
     }
 
-    function normalizePincode(value, label, rowNumber) {
+    function normalizePincode(value) {
         var raw = (value || "").trim();
         if (raw === "") {
             return "";
         }
-        if (!/^[1-9][0-9]{5}$/.test(raw)) {
-            throw new Error("Row " + rowNumber + ": " + label + " must be a valid 6-digit pincode.");
-        }
         return raw;
     }
 
+    function populateModal(row) {
+        var consInput = document.getElementById("modal-consignment-number");
+        consInput.value = row.consignment_number || "";
+        // Ensure the input is editable (some scripts may toggle readOnly)
+        try {
+            consInput.readOnly = false;
+        } catch (e) {
+            // ignore
+        }
+        consInput.focus();
+        document.getElementById("modal-status").value = row.status || "";
+        document.getElementById("modal-pickup-address").value = row.pickup_address || "";
+        document.getElementById("modal-pickup-pincode").value = row.pickup_pincode || "";
+        document.getElementById("modal-pickup-tag").value = row.pickup_tag || "";
+        document.getElementById("modal-pickup-date").value = row.pickup_date || "";
+        document.getElementById("modal-drop-address").value = row.drop_address || "";
+        document.getElementById("modal-drop-pincode").value = row.drop_pincode || "";
+        document.getElementById("modal-drop-tag").value = row.drop_tag || "";
+        document.getElementById("modal-drop-date").value = row.drop_date || "";
+    }
+
+    function clearModal() {
+        populateModal({
+            consignment_number: "",
+            status: "",
+            pickup_address: "",
+            pickup_pincode: "",
+            pickup_tag: "",
+            pickup_date: "",
+            drop_address: "",
+            drop_pincode: "",
+            drop_tag: "",
+            drop_date: "",
+            eta: ""
+        });
+    }
+
+    function buildRowData(source, fallbackId) {
+        var data = source || {};
+        return {
+            id: data.id || fallbackId || null,
+            consignment_number: data.consignment_number || "",
+            status: data.status || "",
+            pickup_address: data.pickup_address || "",
+            pickup_pincode: data.pickup_pincode || "",
+            pickup_tag: data.pickup_tag || "",
+            pickup_date: data.pickup_date || "",
+            drop_address: data.drop_address || "",
+            drop_pincode: data.drop_pincode || "",
+            drop_tag: data.drop_tag || "",
+            drop_date: data.drop_date || "",
+            eta: data.eta || ""
+        };
+    }
+
+    function getRowDataFromTr(tr) {
+        try {
+            return buildRowData(JSON.parse(tr.dataset.row || "{}"), tr.dataset.id ? Number(tr.dataset.id) : null);
+        } catch (error) {
+            return buildRowData({}, tr.dataset.id ? Number(tr.dataset.id) : null);
+        }
+    }
+
     function addRow(row) {
-        var source = row || {};
+        var source = buildRowData(row || {});
         var tr = document.createElement("tr");
         tr.dataset.id = source.id || "";
+        tr.dataset.consignmentNumber = source.consignment_number || "";
+        tr.dataset.row = JSON.stringify(source);
+
+        var consignmentNum = escapeHtml(source.consignment_number || "");
+        var status = escapeHtml(source.status || "");
+        var pickupTag = escapeHtml(source.pickup_tag || "");
+        var dropPin = escapeHtml(source.drop_pincode || "");
+        var pickupDate = escapeHtml(source.pickup_date || "");
+        var dropEta = escapeHtml(source.drop_date || source.eta || "");
 
         tr.innerHTML =
-            "<td><input class=\"form-control form-control-sm consignment_number\" maxlength=\"16\" value=\"" + escapeHtml(source.consignment_number || "") + "\" /></td>" +
-            "<td>" + buildStatusSelect(source.status) + "</td>" +
-            "<td><input class=\"form-control form-control-sm pickup_pincode\" maxlength=\"6\" value=\"" + escapeHtml(source.pickup_pincode || "") + "\" placeholder=\"110017\" /></td>" +
-            "<td><input class=\"form-control form-control-sm pickup_address\" value=\"" + escapeHtml(source.pickup_address || "") + "\" placeholder=\"Pickup address (optional)\" /></td>" +
-            "<td><input class=\"form-control form-control-sm drop_pincode\" maxlength=\"6\" value=\"" + escapeHtml(source.drop_pincode || "") + "\" placeholder=\"400001\" /></td>" +
-            "<td><input class=\"form-control form-control-sm drop_address\" value=\"" + escapeHtml(source.drop_address || "") + "\" placeholder=\"Drop address (optional)\" /></td>" +
-            "<td><input class=\"form-control form-control-sm eta\" maxlength=\"100\" value=\"" + escapeHtml(source.eta || "") + "\" placeholder=\"e.g. 2-3 days\" /></td>" +
-            "<td class=\"text-center\"><button type=\"button\" class=\"btn btn-sm btn-outline-danger remove-row\">Delete</button></td>";
+            "<td>" + consignmentNum + "</td>" +
+            "<td>" + status + "</td>" +
+            "<td>" + pickupTag + "</td>" +
+            "<td>" + dropPin + "</td>" +
+            "<td>" + pickupDate + "</td>" +
+            "<td>" + dropEta + "</td>" +
+            "<td class=\"text-center\"><button type=\"button\" class=\"btn btn-sm btn-outline-primary edit-row\" title=\"Edit\"><i class=\"fa fa-pencil\"></i></button></td>" +
+            "<td class=\"text-center\"><button type=\"button\" class=\"btn btn-sm btn-outline-danger delete-row\" title=\"Delete\"><i class=\"fa fa-times\"></i></button></td>";
 
-        var removeButton = tr.querySelector(".remove-row");
-        if (removeButton) {
-            removeButton.addEventListener("click", function () {
+        var editButton = tr.querySelector(".edit-row");
+        if (editButton) {
+            editButton.addEventListener("click", function () {
+                isCreatingRow = false;
+                currentEditingRow = tr;
+                populateModal(getRowDataFromTr(tr));
+                editModal.show();
+            });
+        }
+
+        var deleteButton = tr.querySelector(".delete-row");
+        if (deleteButton) {
+            deleteButton.addEventListener("click", function () {
                 var existingId = tr.dataset.id ? Number(tr.dataset.id) : null;
                 if (existingId) {
                     deletedIds.add(existingId);
@@ -96,38 +171,62 @@ document.addEventListener("DOMContentLoaded", function () {
         tableBody.appendChild(tr);
     }
 
+    function updateRowFromModal(tr, source) {
+        var consignmentNumber = document.getElementById("modal-consignment-number").value.trim();
+        var status = document.getElementById("modal-status").value.trim();
+        var pickupPincode = document.getElementById("modal-pickup-pincode").value.trim();
+        var dropPincode = document.getElementById("modal-drop-pincode").value.trim();
+
+        if (!consignmentNumber) {
+            showStatus("Consignment number cannot be empty.", "danger");
+            return false;
+        }
+
+        if (!validatePincode(pickupPincode)) {
+            showStatus("Pickup Pincode must be a valid 6-digit number or empty.", "danger");
+            return false;
+        }
+        if (!validatePincode(dropPincode)) {
+            showStatus("Drop Pincode must be a valid 6-digit number or empty.", "danger");
+            return false;
+        }
+
+        // Update source object
+        source.consignment_number = consignmentNumber;
+        source.status = status;
+        source.pickup_address = document.getElementById("modal-pickup-address").value.trim();
+        source.pickup_pincode = normalizePincode(pickupPincode);
+        source.pickup_tag = document.getElementById("modal-pickup-tag").value.trim();
+        source.pickup_date = document.getElementById("modal-pickup-date").value.trim();
+        source.drop_address = document.getElementById("modal-drop-address").value.trim();
+        source.drop_pincode = normalizePincode(dropPincode);
+        source.drop_tag = document.getElementById("modal-drop-tag").value.trim();
+        source.drop_date = document.getElementById("modal-drop-date").value.trim();
+
+        if (tr) {
+            // Update table row display and dataset
+            tr.cells[0].textContent = source.consignment_number || "";
+            tr.dataset.consignmentNumber = source.consignment_number || "";
+            tr.cells[1].textContent = source.status || "";
+            tr.dataset.row = JSON.stringify(source);
+            tr.cells[2].textContent = source.pickup_tag || "";
+            tr.cells[3].textContent = source.drop_pincode || "";
+            tr.cells[4].textContent = source.pickup_date || "";
+            tr.cells[5].textContent = source.drop_date || source.eta || "";
+        }
+
+        return true;
+    }
+
     function collectRows() {
         var rows = [];
         var tableRows = document.querySelectorAll("#sheet-body tr");
-        var rowNumber = 0;
 
         tableRows.forEach(function (tr) {
-            rowNumber += 1;
-            var consignmentNumber = tr.querySelector(".consignment_number").value.trim();
-            var status = tr.querySelector(".status").value.trim();
-            var pickupPincode = tr.querySelector(".pickup_pincode").value.trim();
-            var pickupAddress = (tr.querySelector(".pickup_address") && tr.querySelector(".pickup_address").value.trim()) || "";
-            var dropPincode = tr.querySelector(".drop_pincode").value.trim();
-            var dropAddress = (tr.querySelector(".drop_address") && tr.querySelector(".drop_address").value.trim()) || "";
-            var eta = tr.querySelector(".eta").value.trim();
-
-            if (!consignmentNumber && !status && !pickupPincode && !dropPincode && !eta) {
-                return;
+            var rowData = getRowDataFromTr(tr);
+            if (rowData.consignment_number && rowData.consignment_number.trim()) {
+                rows.push(rowData);
             }
-
-            var normalizedPickupPincode = normalizePincode(pickupPincode, "Pickup pincode", rowNumber);
-            var normalizedDropPincode = normalizePincode(dropPincode, "Drop pincode", rowNumber);
-
-            rows.push({
-                id: tr.dataset.id ? Number(tr.dataset.id) : null,
-                consignment_number: consignmentNumber,
-                status: status,
-                pickup_pincode: normalizedPickupPincode,
-                pickup_address: pickupAddress,
-                drop_pincode: normalizedDropPincode,
-                drop_address: dropAddress,
-                eta: eta
-            });
         });
 
         return rows;
@@ -139,18 +238,10 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
-        var rawRows = [];
-        try {
-            rawRows = collectRows();
-            if (!rawRows.length && deletedIds.size === 0) {
-                showStatus("Sheet is empty. Add at least one row.", "warning");
-                return;
-            }
-        } catch (validationError) {
-            showStatus(
-                "<strong>Validation error.</strong> " + escapeHtml(validationError.message || "Please check the row values."),
-                "danger"
-            );
+        // Collect all row data from row dataset (single source of truth)
+        var rawRows = collectRows();
+        if (!rawRows.length && deletedIds.size === 0) {
+            showStatus("Sheet is empty. Add at least one row.", "warning");
             return;
         }
 
@@ -196,14 +287,47 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    addRowButton.addEventListener("click", function () {
-        addRow();
+    // Modal save button handler
+    modalSaveBtn.addEventListener("click", function () {
+        if (isCreatingRow) {
+            var newSource = buildRowData({});
+            if (updateRowFromModal(null, newSource)) {
+                addRow(newSource);
+                editModal.hide();
+                currentEditingRow = null;
+                isCreatingRow = false;
+            }
+            return;
+        }
+
+        if (currentEditingRow) {
+            var source = getRowDataFromTr(currentEditingRow);
+
+            if (updateRowFromModal(currentEditingRow, source)) {
+                editModal.hide();
+                currentEditingRow = null;
+                isCreatingRow = false;
+            }
+        }
     });
+
+    addRowButton.addEventListener("click", function () {
+        isCreatingRow = true;
+        currentEditingRow = null;
+        clearModal();
+        editModal.show();
+    });
+
+    document.getElementById("editConsignmentModal").addEventListener("hidden.bs.modal", function () {
+        currentEditingRow = null;
+        isCreatingRow = false;
+        clearModal();
+    });
+
     saveButton.addEventListener("click", saveSheet);
 
     if (existingRows.length) {
         existingRows.forEach(addRow);
-    } else {
-        addRow();
     }
 });
+

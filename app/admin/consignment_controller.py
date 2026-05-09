@@ -48,8 +48,12 @@ def consignments_panel():
                 "status": c.status,
                 "pickup_pincode": c.pickup_pincode,
                 "pickup_address": getattr(c, "pickup_address", None),
+                "pickup_tag": getattr(c, "pickup_tag", None),
+                "pickup_date": getattr(c, "pickup_date", None),
                 "drop_pincode": c.drop_pincode,
                 "drop_address": getattr(c, "drop_address", None),
+                "drop_tag": getattr(c, "drop_tag", None),
+                "drop_date": getattr(c, "drop_date", None),
                 "eta": c.eta,
             }
             for c in consignments
@@ -159,14 +163,23 @@ def consignments_save():
             else:
                 row_id = None
 
+            pickup_tag = str(row.get("pickup_tag") or "").strip()
+            pickup_date = str(row.get("pickup_date") or "").strip()
+            drop_tag = str(row.get("drop_tag") or "").strip()
+            drop_date = str(row.get("drop_date") or "").strip()
+
             validated_rows.append({
                 "id": row_id,
                 "consignment_number": consignment_number,
                 "status": status,
                 "pickup_pincode": pickup_pincode,
                 "pickup_address": str(row.get("pickup_address") or "").strip(),
+                "pickup_tag": pickup_tag,
+                "pickup_date": pickup_date,
                 "drop_pincode": drop_pincode,
                 "drop_address": str(row.get("drop_address") or "").strip(),
+                "drop_tag": drop_tag,
+                "drop_date": drop_date,
                 "eta": eta,
             })
 
@@ -184,8 +197,12 @@ def consignments_save():
             consignment.status = row["status"]
             consignment.pickup_pincode = row["pickup_pincode"]
             consignment.pickup_address = row.get("pickup_address")
+            consignment.pickup_tag = row.get("pickup_tag")
+            consignment.pickup_date = row.get("pickup_date")
             consignment.drop_pincode = row["drop_pincode"]
             consignment.drop_address = row.get("drop_address")
+            consignment.drop_tag = row.get("drop_tag")
+            consignment.drop_date = row.get("drop_date")
             consignment.eta = row["eta"]
 
         db.session.commit()
