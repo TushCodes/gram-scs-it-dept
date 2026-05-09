@@ -63,7 +63,13 @@ This application is PostgreSQL-only and is intended to use Supabase in productio
 2. Paste the Supabase pooler URL from [.env.render.example](.env.render.example) into `DATABASE_URL` in Render.
 3. Set `ADMIN_PASSWORD_HASH` to a unique production hash and keep it out of the repository.
 4. Keep `AUTO_CREATE_TABLES=false` so production never mutates schema on boot.
-5. Verify startup via `/health`, then confirm database connectivity via `/health/db` and functional routes like `/track`.
+5. Before sending production traffic to the app, run the schema migration once against the Supabase database:
+
+```bash
+DATABASE_URL="<Supabase pooler URL>" python scripts/ensure_consignment_columns.py
+```
+
+6. Verify startup via `/health`, then confirm database connectivity via `/health/db` and functional routes like `/track`.
 
 ### 5. Deploy
 

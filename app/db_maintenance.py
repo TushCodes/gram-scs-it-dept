@@ -10,6 +10,10 @@ logger = logging.getLogger(__name__)
 CONSIGNMENT_ALTER_STATEMENTS = [
     "ALTER TABLE consignment ADD COLUMN IF NOT EXISTS pickup_address TEXT",
     "ALTER TABLE consignment ADD COLUMN IF NOT EXISTS drop_address TEXT",
+    "ALTER TABLE consignment ADD COLUMN IF NOT EXISTS pickup_tag TEXT",
+    "ALTER TABLE consignment ADD COLUMN IF NOT EXISTS pickup_date VARCHAR(100)",
+    "ALTER TABLE consignment ADD COLUMN IF NOT EXISTS drop_tag TEXT",
+    "ALTER TABLE consignment ADD COLUMN IF NOT EXISTS drop_date VARCHAR(100)",
     "ALTER TABLE consignment ADD COLUMN IF NOT EXISTS pickup_lat DOUBLE PRECISION",
     "ALTER TABLE consignment ADD COLUMN IF NOT EXISTS pickup_lng DOUBLE PRECISION",
     "ALTER TABLE consignment ADD COLUMN IF NOT EXISTS drop_lat DOUBLE PRECISION",
