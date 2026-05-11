@@ -15,6 +15,7 @@ from app.admin import admin_bp
 from app.admin.auth import require_admin
 from app.models import Consignment, db
 from app.services.logistics import (
+    geocode_indian_pincode_with_retry,
     normalize_consignment_number,
     normalize_indian_pincode,
     normalize_status,
@@ -205,6 +206,19 @@ def consignments_save():
             consignment.drop_date = row.get("drop_date")
             consignment.eta = row["eta"]
 
+            # Geocode addresses if not already geocoded
+            if consignment.pickup_address and not consignment.pickup_lat:
+                coords = geocode_indian_pincode_with_retry(consignment.pickup_address)
+                if coords:
+                    consignment.pickup_lat = coords['lat']
+                    consignment.pickup_lng = coords['lng']
+
+            if consignment.drop_address and not consignment.drop_lat:
+                coords = geocode_indian_pincode_with_retry(consignment.drop_address)
+                if coords:
+                    consignment.drop_lat = coords['lat']
+                    consignment.drop_lng = coords['lng']
+
         db.session.commit()
         return jsonify({
             "success": True,
@@ -319,6 +333,20 @@ def consignments_import_excel():
                 drop_date=drop_date,
                 eta=eta,
             )
+
+            # Geocode pickup address if not already geocoded
+            if pickup_address and not consignment.pickup_lat:
+                pickup_coords = geocode_indian_pincode_with_retry(pickup_address)
+                if pickup_coords:
+                    consignment.pickup_lat = pickup_coords['lat']
+                    consignment.pickup_lng = pickup_coords['lng']
+
+            # Geocode drop address if not already geocoded
+            if drop_address and not consignment.drop_lat:
+                drop_coords = geocode_indian_pincode_with_retry(drop_address)
+                if drop_coords:
+                    consignment.drop_lat = drop_coords['lat']
+                    consignment.drop_lng = drop_coords['lng']
 
             db.session.add(consignment)
             file_seen.add(consignment_number)

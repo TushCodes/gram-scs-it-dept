@@ -192,8 +192,14 @@
                         {% if consignment.pickup_address %}
                         <p class="track-metric-value track-address">{{ consignment.pickup_address }}</p>
                         <p class="track-metric-subtext">{{ consignment.pickup_pincode or '' }}</p>
+                        {% if consignment.pickup_date %}
+                        <p class="track-metric-subtext">Pickup Date: {{ consignment.pickup_date }}</p>
+                        {% endif %}
                         {% else %}
                         <p class="track-metric-value">{{ consignment.pickup_pincode or 'Not available' }}</p>
+                        {% if consignment.pickup_date %}
+                        <p class="track-metric-subtext">Pickup Date: {{ consignment.pickup_date }}</p>
+                        {% endif %}
                         {% endif %}
                     </div>
                     <div class="track-metric">
@@ -201,13 +207,15 @@
                         {% if consignment.drop_address %}
                         <p class="track-metric-value track-address">{{ consignment.drop_address }}</p>
                         <p class="track-metric-subtext">{{ consignment.drop_pincode or '' }}</p>
+                        {% if consignment.drop_date %}
+                        <p class="track-metric-subtext">Drop Date: {{ consignment.drop_date }}</p>
+                        {% endif %}
                         {% else %}
                         <p class="track-metric-value">{{ consignment.drop_pincode or 'Not available' }}</p>
+                        {% if consignment.drop_date %}
+                        <p class="track-metric-subtext">Drop Date: {{ consignment.drop_date }}</p>
                         {% endif %}
-                    </div>
-                    <div class="track-metric">
-                        <span class="track-label">ETA</span>
-                        <p class="track-metric-value">{{ consignment.eta or 'Not available' }}</p>
+                        {% endif %}
                     </div>
                 </div>
             </div>
