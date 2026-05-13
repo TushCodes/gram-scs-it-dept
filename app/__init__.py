@@ -139,10 +139,17 @@ if _should_load_local_env_files():
 
 
 def _require_database_uri():
-    """Require a PostgreSQL DATABASE_URL for all environments."""
+    """Require a PostgreSQL DATABASE_URL for production, allow SQLite in development."""
     raw_uri = os.getenv('DATABASE_URL', '').strip()
     if not raw_uri:
+        if os.getenv('FLASK_ENV', '').strip().lower() == 'development':
+            return 'sqlite:///test.db'
         raise RuntimeError('DATABASE_URL is required. SQLite is no longer supported.')
+
+    if raw_uri.startswith('sqlite://'):
+        if os.getenv('FLASK_ENV', '').strip().lower() == 'development':
+            return raw_uri
+        raise RuntimeError('SQLite is only supported for development testing.')
 
     raw_uri = _normalize_postgres_uri(raw_uri)
 
@@ -170,23 +177,85 @@ def _normalize_postgres_uri(raw_uri):
     return raw_uri
 
 
+def _seed_development_consignment_data():
+    if os.getenv('FLASK_ENV', '').strip().lower() != 'development':
+        return
+
+    from app.models import Consignment
+
+    try:
+        if Consignment.query.first():
+            return
+
+        sample_consignment_data = [
+            Consignment(
+                consignment_number='TEST123',
+                status='In Transit',
+                pickup_address='123 Test Street, Test City',
+                pickup_pincode='110001',
+                pickup_date='2026-05-01',
+                drop_address='456 Delivery Rd, Destination City',
+                drop_pincode='400001',
+                drop_date='2026-05-04',
+                eta='2026-05-04 16:00',
+            ),
+            Consignment(
+                consignment_number='HOME123',
+                status='Out for Delivery',
+                pickup_address='789 Origin Ave, Origin City',
+                pickup_pincode='560001',
+                pickup_date='2026-05-02',
+                drop_address='101 Arrival Blvd, Final City',
+                drop_pincode='600001',
+                drop_date='2026-05-05',
+                eta='2026-05-05 12:30',
+            ),
+            Consignment(
+                consignment_number='ABC123',
+                status='Delivered',
+                pickup_address='15 Shipping Lane, Start City',
+                pickup_pincode='700001',
+                pickup_date='2026-04-28',
+                drop_address='29 Destination St, End City',
+                drop_pincode='800001',
+                drop_date='2026-04-30',
+                eta='2026-04-30 10:00',
+            ),
+        ]
+
+        db.session.add_all(sample_consignment_data)
+        db.session.commit()
+        logger.info('Seeded %d development consignments', len(sample_consignment_data))
+    except Exception as e:
+        db.session.rollback()
+        logger.exception('Failed to seed development consignments: %s', e)
+
+
 def create_app():
     app = Flask(__name__)
 
     # DATABASE CONFIG
-    app.config['SQLALCHEMY_DATABASE_URI'] = _require_database_uri()
+    db_uri = _require_database_uri()
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        # Supabase/Render-safe defaults; overridable via env vars.
-        'pool_pre_ping': _env_bool('DB_POOL_PRE_PING', True),
-        'pool_recycle': _env_int('DB_POOL_RECYCLE', 180),
-        'pool_size': _env_int('DB_POOL_SIZE', 3),
-        'max_overflow': _env_int('DB_MAX_OVERFLOW', 2),
-        'pool_timeout': _env_int('DB_POOL_TIMEOUT', 30),
-        'connect_args': {
-            'connect_timeout': _env_int('DB_CONNECT_TIMEOUT', 10),
-        },
-    }
+
+    if db_uri.startswith('sqlite://'):
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+            'pool_pre_ping': False,
+        }
+    else:
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+            # Supabase/Render-safe defaults; overridable via env vars.
+            'pool_pre_ping': _env_bool('DB_POOL_PRE_PING', True),
+            'pool_recycle': _env_int('DB_POOL_RECYCLE', 180),
+            'pool_size': _env_int('DB_POOL_SIZE', 3),
+            'max_overflow': _env_int('DB_MAX_OVERFLOW', 2),
+            'pool_timeout': _env_int('DB_POOL_TIMEOUT', 30),
+            'connect_args': {
+                'connect_timeout': _env_int('DB_CONNECT_TIMEOUT', 10),
+            },
+        }
+
     app.config['RATELIMIT_STORAGE_URI'] = _resolve_rate_limit_storage_uri()
     app.config['RATELIMIT_HEADERS_ENABLED'] = True
     app.config.from_object('app.config')
@@ -197,12 +266,14 @@ def create_app():
     auto_create_tables = _should_auto_create_tables()
     if auto_create_tables:
         try:
-            ensure_consignment_columns_async(app.config['SQLALCHEMY_DATABASE_URI'], logger)
+            if not app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite://'):
+                ensure_consignment_columns_async(app.config['SQLALCHEMY_DATABASE_URI'], logger)
         except Exception:
             logger.exception('Failed to start consignment schema repair')
 
         with app.app_context():
             db.create_all()
+            _seed_development_consignment_data()
     else:
         logger.info('AUTO_CREATE_TABLES disabled. Skipping db.create_all() at startup.')
         logger.info('Skipping startup consignment schema repair in production.')

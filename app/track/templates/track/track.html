@@ -179,9 +179,32 @@
     <div class="track-result">
         <div class="track-grid">
             <div class="track-card track-status-card">
-                <span class="track-label">Current Status</span>
-                <div class="track-status-wrapper">
-                    <span class="track-status {{ status_class }}">{{ status_text }}</span>
+                <div class="delivery-progress-card">
+                    <div class="delivery-progress-header">
+                        <span>DELIVERY PROGRESS</span>
+                    </div>
+                    <div class="tracker-phases delivery-progress-list">
+                        <div class="tracker-phase {% if completed_phases >= 1 %}completed{% endif %} {% if completed_phases == 1 %}active{% endif %}">
+                            <div class="tracker-phase-text">
+                                <span class="tracker-phase-label">Pickup Done</span>
+                            </div>
+                        </div>
+                        <div class="tracker-phase {% if completed_phases >= 2 %}completed{% endif %} {% if completed_phases == 2 %}active{% endif %}">
+                            <div class="tracker-phase-text">
+                                <span class="tracker-phase-label">In Transit</span>
+                            </div>
+                        </div>
+                        <div class="tracker-phase {% if completed_phases >= 3 %}completed{% endif %} {% if completed_phases == 3 %}active{% endif %}">
+                            <div class="tracker-phase-text">
+                                <span class="tracker-phase-label">Out for Delivery</span>
+                            </div>
+                        </div>
+                        <div class="tracker-phase {% if completed_phases >= 4 %}completed{% endif %} {% if completed_phases == 4 %}active{% endif %}">
+                            <div class="tracker-phase-text">
+                                <span class="tracker-phase-label">Delivered</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -225,36 +248,9 @@
     {% endif %}
 </section>
 
-<!-- Delivery Progress Tracker Backdrop -->
-<div class="tracker-backdrop" id="trackerBackdrop"></div>
-
-<!-- Delivery Progress Tracker Tooltip (outside overflow container) -->
-<div class="tracker-tooltip" id="deliveryTracker">
-    <button class="tracker-close">&times;</button>
-    <span class="tracker-title">Delivery Progress</span>
-    <div class="tracker-phases">
-        <div class="tracker-phase {% if completed_phases >= 1 %}completed{% endif %}">
-            <div class="tracker-phase-icon"></div>
-            <span class="tracker-phase-label">Pickup Scheduled</span>
-        </div>
-        <div class="tracker-phase {% if completed_phases >= 2 %}completed{% endif %}">
-            <div class="tracker-phase-icon"></div>
-            <span class="tracker-phase-label">In Transit</span>
-        </div>
-        <div class="tracker-phase {% if completed_phases >= 3 %}completed{% endif %}">
-            <div class="tracker-phase-icon"></div>
-            <span class="tracker-phase-label">Out for Delivery</span>
-        </div>
-        <div class="tracker-phase {% if completed_phases >= 4 %}completed{% endif %}">
-            <div class="tracker-phase-icon"></div>
-            <span class="tracker-phase-label">Delivered</span>
-        </div>
-    </div>
-</div>
 {% endblock %}
 
 {% block scripts_extra %}
 {{ super() }}
 <script src="{{ url_for('static', filename='js/menu.js') }}"></script>
-<script src="{{ url_for('static', filename='js/track-tooltip.js') }}"></script>
 {% endblock %}
