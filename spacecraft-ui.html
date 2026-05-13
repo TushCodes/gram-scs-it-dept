@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nova-1 Spacecraft Specs</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            font-family: 'Arial', sans-serif;
+            color: #2c3e50;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            max-width: 1400px;
+            width: 100%;
+        }
+
+        /* Left Panel - Spacecraft Image */
+        .spacecraft-panel {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            background: linear-gradient(135deg, #4a5f8f 0%, #5a7fa6 50%, #3a4f7f 100%);
+            border-radius: 8px;
+            overflow: hidden;
+            aspect-ratio: 1;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        .spacecraft-image {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            perspective: 1000px;
+        }
+
+        .spacecraft {
+            position: relative;
+            width: 300px;
+            height: 400px;
+            transform: rotateX(-10deg) rotateZ(5deg);
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% {
+                transform: rotateX(-10deg) rotateZ(5deg) translateY(0);
+            }
+            50% {
+                transform: rotateX(-10deg) rotateZ(5deg) translateY(-20px);
+            }
+        }
+
+        .fuselage {
+            position: absolute;
+            width: 80px;
+            height: 300px;
+            left: 50%;
+            top: 20px;
+            transform: translateX(-50%);
+            background: linear-gradient(90deg, #e8e8e8 0%, #ffffff 50%, #d0d0d0 100%);
+            border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+            box-shadow: inset -5px 0 10px rgba(0, 0, 0, 0.2), 0 5px 15px rgba(0, 0, 0, 0.4);
+        }
+
+        .window {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            background: radial-gradient(circle at 30% 30%, #87ceeb, #4a90e2);
+            border-radius: 50%;
+            left: 25%;
+            box-shadow: inset -2px -2px 5px rgba(0, 0, 0, 0.3);
+        }
+
+        .window:nth-child(1) { top: 40px; }
+        .window:nth-child(2) { top: 100px; }
+        .window:nth-child(3) { top: 160px; }
+
+        .wing {
+            position: absolute;
+            background: linear-gradient(135deg, #ffffff 0%, #e0e0e0 100%);
+            bottom: 150px;
+        }
+
+        .wing-left {
+            width: 120px;
+            height: 40px;
+            left: -60px;
+            clip-path: polygon(0% 50%, 100% 20%, 100% 80%, 0% 100%);
+            box-shadow: -5px 5px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .wing-right {
+            width: 120px;
+            height: 40px;
+            right: -60px;
+            clip-path: polygon(0% 20%, 100% 50%, 100% 100%, 0% 80%);
+            box-shadow: 5px 5px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .thruster {
+            position: absolute;
+            width: 30px;
+            height: 50px;
+            bottom: 20px;
+            background: linear-gradient(90deg, #1a1a1a 0%, #3a3a3a 50%, #1a1a1a 100%);
+            border-radius: 5px;
+        }
+
+        .thruster:nth-child(4) { left: 35%; }
+        .thruster:nth-child(5) { right: 35%; }
+
+        .thruster::after {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 30px;
+            bottom: -30px;
+            background: radial-gradient(ellipse at center, #ffff00, #ffa500, transparent);
+            opacity: 0.8;
+            filter: blur(8px);
+            animation: thruster-glow 1s ease-in-out infinite;
+        }
+
+        @keyframes thruster-glow {
+            0%, 100% {
+                opacity: 0.6;
+                height: 30px;
+            }
+            50% {
+                opacity: 0.9;
+                height: 40px;
+            }
+        }
+
+        .yellow-accent {
+            position: absolute;
+            background: #ffff00;
+            border: 3px solid #333;
+        }
+
+        .accent-left {
+            width: 100px;
+            height: 80px;
+            bottom: 120px;
+            left: -50px;
+            clip-path: polygon(50% 0%, 100% 0%, 50% 100%, 0% 100%);
+            transform: skewY(-10deg);
+        }
+
+        .accent-right {
+            width: 100px;
+            height: 80px;
+            bottom: 120px;
+            right: -50px;
+            clip-path: polygon(0% 0%, 50% 0%, 100% 100%, 50% 100%);
+            transform: skewY(10deg);
+        }
+
+        .accent-bottom {
+            width: 60px;
+            height: 30px;
+            bottom: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            clip-path: polygon(20% 0%, 80% 0%, 100% 100%, 0% 100%);
+        }
+
+        .logo-tag {
+            position: absolute;
+            bottom: 40px;
+            left: 20px;
+            background: white;
+            padding: 8px 12px;
+            border: 2px solid #333;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        /* Right Panel - Specs Card */
+        .specs-panel {
+            background: linear-gradient(135deg, #e3f2fd 0%, #f0f8ff 100%);
+            border-radius: 8px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+            position: relative;
+        }
+
+        .specs-panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 80px;
+            height: 100%;
+            background: #ffff00;
+            border-radius: 0 8px 8px 0;
+            z-index: 0;
+        }
+
+        .specs-content {
+            position: relative;
+            z-index: 1;
+        }
+
+        .header-line {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #333;
+            margin-bottom: 20px;
+        }
+
+        .seat-info {
+            display: flex;
+            align-items: flex-start;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .seat-label {
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .seat-number {
+            font-size: 72px;
+            font-weight: 900;
+            color: #2c3e50;
+            line-height: 1;
+            font-family: 'Courier New', monospace;
+        }
+
+        .cabin-info {
+            background: rgba(255, 255, 255, 0.7);
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+
+        .cabin-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 8px;
+            margin: 10px 0;
+        }
+
+        .seat-dot {
+            width: 12px;
+            height: 12px;
+            background: #4a90e2;
+            border-radius: 50%;
+        }
+
+        .cabin-label {
+            font-size: 11px;
+            color: #666;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-top: 10px;
+        }
+
+        .section {
+            margin: 25px 0;
+        }
+
+        .section-title {
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .tribune-section {
+            background: linear-gradient(135deg, rgba(200, 220, 255, 0.5), rgba(220, 240, 255, 0.5));
+            padding: 20px;
+            border-radius: 4px;
+            border: 1px solid #b3d9ff;
+        }
+
+        .tribune-title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .tribune-content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .tribune-description {
+            font-size: 12px;
+            color: #555;
+            line-height: 1.6;
+        }
+
+        .access-badge {
+            background: #2c3e50;
+            color: white;
+            padding: 12px 16px;
+            border-radius: 4px;
+            font-size: 11px;
+            text-align: center;
+            font-weight: bold;
+            text-transform: uppercase;
+            line-height: 1.4;
+        }
+
+        .access-badge::before {
+            content: '☆';
+            display: block;
+            font-size: 20px;
+            margin-bottom: 5px;
+        }
+
+        .specs-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .specs-row:last-child {
+            border-bottom: none;
+        }
+
+        .spec-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .spec-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            font-weight: bold;
+            margin-bottom: 5px;
+            letter-spacing: 1px;
+        }
+
+        .spec-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #2c3e50;
+            font-family: 'Courier New', monospace;
+        }
+
+        .vessel-name {
+            font-size: 48px;
+            font-weight: 900;
+            color: #2c3e50;
+            margin: 20px 0;
+            font-family: 'Arial', sans-serif;
+            letter-spacing: -2px;
+        }
+
+        .vessel-class {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin: 15px 0;
+            letter-spacing: 2px;
+        }
+
+        .logos-section {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 2px solid #333;
+        }
+
+        .logo {
+            background: rgba(255, 255, 255, 0.5);
+            padding: 15px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 60px;
+            font-weight: bold;
+            color: #333;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        .status-indicators {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .indicator.active {
+            background: #4caf50;
+        }
+
+        .indicator.warning {
+            background: #ff9800;
+        }
+
+        .indicator.inactive {
+            background: #ccc;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .container {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+
+            .spacecraft {
+                width: 250px;
+                height: 350px;
+            }
+
+            .specs-panel {
+                padding: 30px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .seat-number {
+                font-size: 56px;
+            }
+
+            .vessel-name {
+                font-size: 36px;
+            }
+
+            .specs-panel {
+                padding: 20px;
+            }
+
+            .logos-section {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Left Panel: Spacecraft -->
+        <div class="spacecraft-panel">
+            <div class="spacecraft-image">
+                <div class="spacecraft">
+                    <!-- Fuselage -->
+                    <div class="fuselage">
+                        <div class="window"></div>
+                        <div class="window"></div>
+                        <div class="window"></div>
+                    </div>
+
+                    <!-- Wings -->
+                    <div class="wing wing-left"></div>
+                    <div class="wing wing-right"></div>
+
+                    <!-- Thrusters -->
+                    <div class="thruster"></div>
+                    <div class="thruster"></div>
+
+                    <!-- Yellow Accents -->
+                    <div class="yellow-accent accent-left"></div>
+                    <div class="yellow-accent accent-right"></div>
+                    <div class="yellow-accent accent-bottom"></div>
+
+                    <!-- Logo Tag -->
+                    <div class="logo-tag">74</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel: Specs -->
+        <div class="specs-panel">
+            <div class="specs-content">
+                <!-- Header -->
+                <div class="header-line">
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <div class="status-indicators">
+                            <div class="indicator active"></div>
+                            <div class="indicator active"></div>
+                            <div class="indicator warning"></div>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 20px; font-size: 12px; text-transform: uppercase; font-weight: bold;">
+                        <span>Cabin Core OPS</span>
+                        <span>Gravity Lounge Entry</span>
+                        <span>Full Travel Access</span>
+                    </div>
+                </div>
+
+                <!-- Seat Info -->
+                <div class="seat-info">
+                    <div>
+                        <div class="seat-label">Seat:</div>
+                        <div class="seat-number">27B</div>
+                    </div>
+                </div>
+
+                <!-- Cabin Information -->
+                <div class="cabin-info">
+                    <div class="cabin-label">Tribune: Skyline Delta</div>
+                    <div class="cabin-grid">
+                        <div class="seat-dot"></div>
+                        <div class="seat-dot"></div>
+                        <div class="seat-dot"></div>
+                        <div class="seat-dot"></div>
+                        <div class="seat-dot"></div>
+                        <div class="seat-dot"></div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; font-size: 10px;">
+                        <div><strong>Access Node:</strong><br/>Civilian Tier</div>
+                        <div><strong>Confirm ID:</strong><br/>00008 A</div>
+                    </div>
+                </div>
+
+                <!-- Vessel Section -->
+                <div class="section">
+                    <div class="vessel-name">Nova-1</div>
+                    <div class="vessel-class">Aero GP</div>
+                </div>
+
+                <!-- Specs Row -->
+                <div class="specs-row">
+                    <div class="spec-item">
+                        <span class="spec-label">Aero GP</span>
+                        <span class="spec-value">0.243</span>
+                    </div>
+                    <div class="spec-item">
+                        <span class="spec-label">Core Efficiency</span>
+                        <span class="spec-value">94%</span>
+                    </div>
+                </div>
+
+                <!-- Entry Access Section -->
+                <div class="section">
+                    <div class="section-title">
+                        Post-Race Debrief Access
+                    </div>
+                </div>
+
+                <!-- Logos Section -->
+                <div class="logos-section">
+                    <div class="logo">🛡️ ACCESS</div>
+                    <div class="logo">MOKI</div>
+                    <div class="logo">ATIRA</div>
+                    <div class="logo">RS</div>
+                    <div class="logo">X</div>
+                    <div class="logo">AIRND</div>
+                    <div class="logo">74</div>
+                    <div class="logo">★</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
