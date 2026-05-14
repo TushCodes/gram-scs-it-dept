@@ -15,10 +15,6 @@ class Consignment(db.Model):
     drop_address = db.Column(db.Text)
     drop_tag = db.Column(db.String(100))
     drop_date = db.Column(db.String(100))
-    pickup_lat = db.Column(db.Float)
-    pickup_lng = db.Column(db.Float)
-    drop_lat = db.Column(db.Float)
-    drop_lng = db.Column(db.Float)
     eta = db.Column(db.String(100))
     eta_debug_json = db.Column(db.Text)
 

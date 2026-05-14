@@ -55,10 +55,6 @@ def create_backup():
                 "pickup_address": getattr(row, "pickup_address", None),
                 "drop_pincode": row.drop_pincode,
                 "drop_address": getattr(row, "drop_address", None),
-                "pickup_lat": row.pickup_lat,
-                "pickup_lng": row.pickup_lng,
-                "drop_lat": row.drop_lat,
-                "drop_lng": row.drop_lng,
                 "eta": row.eta,
                 "eta_debug_json": row.eta_debug_json,
             }
@@ -118,10 +114,6 @@ def restore_backup(backup_file):
             entity.pickup_address = item.get("pickup_address")
             entity.drop_pincode = item.get("drop_pincode")
             entity.drop_address = item.get("drop_address")
-            entity.pickup_lat = item.get("pickup_lat")
-            entity.pickup_lng = item.get("pickup_lng")
-            entity.drop_lat = item.get("drop_lat")
-            entity.drop_lng = item.get("drop_lng")
             entity.eta = item.get("eta")
             entity.eta_debug_json = item.get("eta_debug_json")
 

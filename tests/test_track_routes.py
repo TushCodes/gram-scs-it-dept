@@ -11,10 +11,6 @@ class FakeConsignment:
         self.status = "In Transit"
         self.pickup_pincode = "110017"
         self.drop_pincode = "110018"
-        self.pickup_lat = None
-        self.pickup_lng = None
-        self.drop_lat = None
-        self.drop_lng = None
         self.eta = None
         self.eta_debug_json = None
 
@@ -76,8 +72,6 @@ class TrackRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"2026-04-05 12:00", response.data)
         self.assertEqual(record.eta, "2026-04-05 12:00")
-        self.assertIsNone(record.pickup_lat)
-        self.assertIsNone(record.drop_lng)
         mock_commit.assert_not_called()
         mock_logger.info.assert_any_call("Shipment found for consignment %s", "ABC123")
 
