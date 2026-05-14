@@ -99,6 +99,121 @@ def _normalize_header(value):
     return re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")
 
 
+@admin_bp.route("/admin/consignments/list", methods=["GET"], endpoint="consignments_list_api")
+@require_admin
+def consignments_list_api():
+    """API endpoint for paginated, searchable, and sortable consignments."""
+    try:
+        # Get parameters from request
+        page = request.args.get("page", 1, type=int)
+        per_page = request.args.get("per_page", 10, type=int)
+        search = request.args.get("search", "", type=str).strip()
+        sort_by = request.args.get("sort_by", "id", type=str)
+        sort_order = request.args.get("sort_order", "asc", type=str)
+
+        # Validate pagination parameters
+        page = max(1, page)
+        per_page = max(1, min(100, per_page))  # Limit to max 100 per page
+
+        # Validate sort parameters
+        allowed_sort_columns = {
+            "id", "consignment_number", "status", "pickup_pincode",
+            "drop_pincode", "pickup_tag", "drop_tag", "pickup_date", "drop_date"
+        }
+        sort_by = sort_by if sort_by in allowed_sort_columns else "id"
+        sort_order = "asc" if sort_order.lower() == "asc" else "desc"
+
+        # Build base query
+        query = Consignment.query
+
+        # Apply search filter if provided
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.filter(
+                db.or_(
+                    Consignment.consignment_number.ilike(search_pattern),
+                    Consignment.status.ilike(search_pattern),
+                    Consignment.pickup_tag.ilike(search_pattern),
+                    Consignment.drop_tag.ilike(search_pattern),
+                    Consignment.pickup_pincode.ilike(search_pattern),
+                    Consignment.drop_pincode.ilike(search_pattern),
+                    Consignment.pickup_address.ilike(search_pattern),
+                    Consignment.drop_address.ilike(search_pattern),
+                )
+            )
+
+        # Get total count before pagination
+        total = query.count()
+
+        # Apply sorting
+        sort_column = getattr(Consignment, sort_by)
+        if sort_order == "desc":
+            query = query.order_by(sort_column.desc())
+        else:
+            query = query.order_by(sort_column.asc())
+
+        # Apply pagination
+        paginated = query.paginate(page=page, per_page=per_page, error_out=False)
+
+        # Serialize results
+        rows = [
+            {
+                "id": c.id,
+                "consignment_number": c.consignment_number,
+                "status": c.status,
+                "pickup_pincode": c.pickup_pincode,
+                "pickup_address": getattr(c, "pickup_address", None),
+                "pickup_tag": getattr(c, "pickup_tag", None),
+                "pickup_date": getattr(c, "pickup_date", None),
+                "drop_pincode": c.drop_pincode,
+                "drop_address": getattr(c, "drop_address", None),
+                "drop_tag": getattr(c, "drop_tag", None),
+                "drop_date": getattr(c, "drop_date", None),
+                "eta": c.eta,
+            }
+            for c in paginated.items
+        ]
+
+        return jsonify({
+            "success": True,
+            "rows": rows,
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "pages": paginated.pages,
+            "has_prev": paginated.has_prev,
+            "has_next": paginated.has_next,
+        })
+
+    except ProgrammingError as error:
+        db.session.rollback()
+        if _is_missing_column_error(error):
+            logger.exception("Schema mismatch in consignments API")
+            return jsonify({
+                "success": False,
+                "error": "Database schema needs an update. Missing consignment fields."
+            }), 500
+
+        logger.exception("Database error in consignments API")
+        return jsonify({
+            "success": False,
+            "error": "Unable to load data. Please try again."
+        }), 500
+    except (OperationalError, DatabaseError):
+        db.session.rollback()
+        logger.exception("Database error in consignments API")
+        return jsonify({
+            "success": False,
+            "error": "Database connection error. Please try again."
+        }), 500
+    except Exception as e:
+        logger.exception("Unexpected error in consignments API")
+        return jsonify({
+            "success": False,
+            "error": "An unexpected error occurred."
+        }), 500
+
+
 @admin_bp.route("/admin/consignments/save", methods=["POST"], endpoint="consignments_save")
 @limiter.limit("25 per minute")
 @require_admin

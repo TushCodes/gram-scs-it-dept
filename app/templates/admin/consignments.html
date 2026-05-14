@@ -9,6 +9,47 @@
   #sheet-table td, #sheet-table th {
     vertical-align: middle;
   }
+  .sort-header {
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .sort-header:hover {
+    background-color: #f0f0f0;
+  }
+  .sort-icon {
+    margin-left: 4px;
+    font-size: 0.8em;
+    opacity: 0.6;
+  }
+  .sort-icon.active {
+    opacity: 1;
+    color: #0d6efd;
+  }
+  .pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+  }
+  .pagination-info {
+    font-size: 0.9em;
+    color: #666;
+  }
+  .pagination-buttons {
+    display: flex;
+    gap: 0.25rem;
+  }
+  .pagination-buttons .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.85em;
+  }
+  .page-number {
+    padding: 0.25rem 0.5rem;
+    min-width: 2rem;
+    text-align: center;
+  }
 </style>
 {% endblock %}
 
@@ -42,16 +83,58 @@
 
   <div id="status-msg" class="alert d-none" role="alert"></div>
 
+  <!-- Search and Filter Controls -->
+  <div class="bg-white border rounded mb-3 p-3">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label for="search-input" class="form-label">Search</label>
+        <input 
+          type="text" 
+          id="search-input" 
+          class="form-control form-control-sm" 
+          placeholder="Search by consignment #, status, tag, address, or pincode..."
+        />
+      </div>
+      <div class="col-md-3">
+        <label for="per-page-select" class="form-label">Rows per page</label>
+        <select id="per-page-select" class="form-select form-select-sm">
+          <option value="10" selected>10</option>
+          <option value="25">25</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label>&nbsp;</label>
+        <button id="clear-filters-btn" type="button" class="btn btn-outline-secondary btn-sm w-100">
+          <i class="fa fa-times me-1"></i>Clear Filters
+        </button>
+      </div>
+    </div>
+  </div>
+
   <div class="table-responsive bg-white border rounded">
     <table class="table table-sm table-bordered align-middle mb-0" id="sheet-table">
       <thead class="table-light">
         <tr>
-          <th style="min-width: 140px;">Consignment #</th>
-          <th style="min-width: 150px;">Status</th>
-          <th style="min-width: 140px;">Pickup Tag</th>
-          <th style="min-width: 120px;">Drop Pin</th>
-          <th style="min-width: 120px;">Pickup Date</th>
-          <th style="min-width: 140px;">Drop Estimated</th>
+          <th style="min-width: 140px;" class="sort-header" data-sort-column="consignment_number">
+            Consignment # <span class="sort-icon"><i class="fa fa-sort"></i></span>
+          </th>
+          <th style="min-width: 150px;" class="sort-header" data-sort-column="status">
+            Status <span class="sort-icon"><i class="fa fa-sort"></i></span>
+          </th>
+          <th style="min-width: 140px;" class="sort-header" data-sort-column="pickup_tag">
+            Pickup Tag <span class="sort-icon"><i class="fa fa-sort"></i></span>
+          </th>
+          <th style="min-width: 120px;" class="sort-header" data-sort-column="drop_pincode">
+            Drop Pin <span class="sort-icon"><i class="fa fa-sort"></i></span>
+          </th>
+          <th style="min-width: 120px;" class="sort-header" data-sort-column="pickup_date">
+            Pickup Date <span class="sort-icon"><i class="fa fa-sort"></i></span>
+          </th>
+          <th style="min-width: 140px;" class="sort-header" data-sort-column="drop_date">
+            Drop Estimated <span class="sort-icon"><i class="fa fa-sort"></i></span>
+          </th>
           <th style="width: 60px; text-align: center;">Edit</th>
           <th style="width: 60px; text-align: center;">Delete</th>
         </tr>
@@ -59,8 +142,29 @@
       <tbody
         id="sheet-body"
         data-existing-rows="{{ consignments | tojson | forceescape }}"
-        data-save-url="{{ url_for('admin.consignments_save') }}"></tbody>
+        data-save-url="{{ url_for('admin.consignments_save') }}"
+        data-list-url="{{ url_for('admin.consignments_list_api') }}"></tbody>
     </table>
+  </div>
+
+  <!-- Pagination Controls -->
+  <div class="pagination-controls">
+    <div class="pagination-info">
+      Showing <span id="showing-start">0</span>-<span id="showing-end">0</span> of <span id="total-count">0</span>
+    </div>
+    <div class="pagination-buttons">
+      <button id="prev-page-btn" type="button" class="btn btn-outline-secondary btn-sm">
+        <i class="fa fa-chevron-left"></i> Prev
+      </button>
+      <div id="page-numbers-container"></div>
+      <button id="next-page-btn" type="button" class="btn btn-outline-secondary btn-sm">
+        Next <i class="fa fa-chevron-right"></i>
+      </button>
+    </div>
+    <div id="loading-spinner" class="d-none">
+      <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+      Loading...
+    </div>
   </div>
 
   <!-- Edit Modal -->

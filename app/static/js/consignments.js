@@ -4,22 +4,33 @@ document.addEventListener("DOMContentLoaded", function () {
     var addRowButton = document.getElementById("add-row-btn");
     var editModal = new bootstrap.Modal(document.getElementById("editConsignmentModal"));
     var modalSaveBtn = document.getElementById("modal-save-btn");
+    var searchInput = document.getElementById("search-input");
+    var perPageSelect = document.getElementById("per-page-select");
+    var clearFiltersBtn = document.getElementById("clear-filters-btn");
+    var prevPageBtn = document.getElementById("prev-page-btn");
+    var nextPageBtn = document.getElementById("next-page-btn");
+    var pageNumbersContainer = document.getElementById("page-numbers-container");
 
     if (!tableBody || !saveButton || !addRowButton) {
         return;
     }
 
     var saveUrl = tableBody.dataset.saveUrl || "";
-    var existingRows = [];
+    var listUrl = tableBody.dataset.listUrl || "";
     var deletedIds = new Set();
-    var currentEditingRow = null; // Track which row is being edited
+    var currentEditingRow = null;
     var isCreatingRow = false;
-
-    try {
-        existingRows = JSON.parse(tableBody.dataset.existingRows || "[]");
-    } catch (error) {
-        console.error("Failed to parse existing consignment rows.", error);
-    }
+    var searchTimeout;
+    var currentPage = 1;
+    var currentPerPage = 10;
+    var currentSearch = "";
+    var currentSortBy = "id";
+    var currentSortOrder = "asc";
+    var totalRows = 0;
+    var totalPages = 1;
+    var locallyAddedRows = [];
+    var modifiedRowIds = new Set();
+    var newRowIdCounter = 0;
 
     function showStatus(message, type) {
         var el = document.getElementById("status-msg");
@@ -123,12 +134,13 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    function addRow(row) {
+    function addRow(row, isLocal) {
         var source = buildRowData(row || {});
         var tr = document.createElement("tr");
         tr.dataset.id = source.id || "";
         tr.dataset.consignmentNumber = source.consignment_number || "";
         tr.dataset.row = JSON.stringify(source);
+        tr.dataset.isLocal = isLocal ? "true" : "false";
 
         var consignmentNum = escapeHtml(source.consignment_number || "");
         var status = escapeHtml(source.status || "");
@@ -136,6 +148,8 @@ document.addEventListener("DOMContentLoaded", function () {
         var dropPin = escapeHtml(source.drop_pincode || "");
         var pickupDate = escapeHtml(source.pickup_date || "");
         var dropEta = escapeHtml(source.drop_date || source.eta || "");
+
+        var rowClass = isLocal ? 'table-info' : '';
 
         tr.innerHTML =
             "<td>" + consignmentNum + "</td>" +
@@ -146,6 +160,10 @@ document.addEventListener("DOMContentLoaded", function () {
             "<td>" + dropEta + "</td>" +
             "<td class=\"text-center\"><button type=\"button\" class=\"btn btn-sm btn-outline-primary edit-row\" title=\"Edit\"><i class=\"fa fa-pencil\"></i></button></td>" +
             "<td class=\"text-center\"><button type=\"button\" class=\"btn btn-sm btn-outline-danger delete-row\" title=\"Delete\"><i class=\"fa fa-times\"></i></button></td>";
+
+        if (rowClass) {
+            tr.className = rowClass;
+        }
 
         var editButton = tr.querySelector(".edit-row");
         if (editButton) {
@@ -161,8 +179,13 @@ document.addEventListener("DOMContentLoaded", function () {
         if (deleteButton) {
             deleteButton.addEventListener("click", function () {
                 var existingId = tr.dataset.id ? Number(tr.dataset.id) : null;
-                if (existingId) {
+                if (existingId && existingId > 0) {
                     deletedIds.add(existingId);
+                }
+                // Remove from local tracking
+                var idx = locallyAddedRows.findIndex(function (r) { return r.id === existingId; });
+                if (idx !== -1) {
+                    locallyAddedRows.splice(idx, 1);
                 }
                 tr.remove();
             });
@@ -191,7 +214,6 @@ document.addEventListener("DOMContentLoaded", function () {
             return false;
         }
 
-        // Update source object
         source.consignment_number = consignmentNumber;
         source.status = status;
         source.pickup_address = document.getElementById("modal-pickup-address").value.trim();
@@ -204,7 +226,6 @@ document.addEventListener("DOMContentLoaded", function () {
         source.drop_date = document.getElementById("modal-drop-date").value.trim();
 
         if (tr) {
-            // Update table row display and dataset
             tr.cells[0].textContent = source.consignment_number || "";
             tr.dataset.consignmentNumber = source.consignment_number || "";
             tr.cells[1].textContent = source.status || "";
@@ -213,6 +234,12 @@ document.addEventListener("DOMContentLoaded", function () {
             tr.cells[3].textContent = source.drop_pincode || "";
             tr.cells[4].textContent = source.pickup_date || "";
             tr.cells[5].textContent = source.drop_date || source.eta || "";
+
+            // Track modification
+            var rowId = tr.dataset.id ? Number(tr.dataset.id) : null;
+            if (rowId && rowId > 0) {
+                modifiedRowIds.add(rowId);
+            }
         }
 
         return true;
@@ -238,10 +265,9 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
-        // Collect all row data from row dataset (single source of truth)
         var rawRows = collectRows();
         if (!rawRows.length && deletedIds.size === 0) {
-            showStatus("Sheet is empty. Add at least one row.", "warning");
+            showStatus("No changes to save.", "warning");
             return;
         }
 
@@ -276,8 +302,12 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             showStatus("<strong>Saved successfully.</strong> Your internal database has been updated.", "success");
+            deletedIds.clear();
+            modifiedRowIds.clear();
+            locallyAddedRows = [];
+            newRowIdCounter = 0;
             setTimeout(function () {
-                window.location.reload();
+                loadPage(1, currentSearch, currentPerPage, currentSortBy, currentSortOrder);
             }, 1200);
         } catch (error) {
             showStatus("<strong>Save failed.</strong> " + escapeHtml(error.message || "Please check the row values and try again."), "danger");
@@ -287,12 +317,161 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    // Modal save button handler
+    async function loadPage(page, search, perPage, sortBy, sortOrder) {
+        if (!listUrl) {
+            showStatus("List endpoint is missing.", "danger");
+            return;
+        }
+
+        try {
+            var params = new URLSearchParams({
+                page: page,
+                per_page: perPage,
+                search: search,
+                sort_by: sortBy,
+                sort_order: sortOrder
+            });
+
+            showLoadingSpinner(true);
+
+            var response = await fetch(listUrl + "?" + params.toString());
+            var data = await response.json();
+
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || "Failed to load data.");
+            }
+
+            // Clear existing rows
+            tableBody.innerHTML = "";
+
+            // Add fetched rows
+            data.rows.forEach(function (row) {
+                addRow(row, false);
+            });
+
+            // Update pagination info
+            totalRows = data.total;
+            totalPages = data.pages;
+            currentPage = page;
+            currentPerPage = perPage;
+            currentSearch = search;
+            currentSortBy = sortBy;
+            currentSortOrder = sortOrder;
+
+            updatePaginationUI();
+            updateSortHeaders();
+
+        } catch (error) {
+            showStatus("<strong>Failed to load data.</strong> " + escapeHtml(error.message || "Please try again."), "danger");
+        } finally {
+            showLoadingSpinner(false);
+        }
+    }
+
+    function updatePaginationUI() {
+        var showingStart = (currentPage - 1) * currentPerPage + 1;
+        var showingEnd = Math.min(currentPage * currentPerPage, totalRows);
+
+        document.getElementById("showing-start").textContent = totalRows > 0 ? showingStart : 0;
+        document.getElementById("showing-end").textContent = showingEnd;
+        document.getElementById("total-count").textContent = totalRows;
+
+        prevPageBtn.disabled = currentPage <= 1;
+        nextPageBtn.disabled = currentPage >= totalPages;
+
+        // Generate page numbers
+        pageNumbersContainer.innerHTML = "";
+        var startPage = Math.max(1, currentPage - 2);
+        var endPage = Math.min(totalPages, currentPage + 2);
+
+        if (startPage > 1) {
+            var firstPageBtn = document.createElement("button");
+            firstPageBtn.type = "button";
+            firstPageBtn.className = "btn btn-outline-secondary btn-sm page-number";
+            firstPageBtn.textContent = "1";
+            firstPageBtn.addEventListener("click", function () {
+                loadPage(1, currentSearch, currentPerPage, currentSortBy, currentSortOrder);
+            });
+            pageNumbersContainer.appendChild(firstPageBtn);
+
+            if (startPage > 2) {
+                var ellipsis = document.createElement("span");
+                ellipsis.className = "page-number";
+                ellipsis.textContent = "...";
+                pageNumbersContainer.appendChild(ellipsis);
+            }
+        }
+
+        for (var i = startPage; i <= endPage; i++) {
+            var pageBtn = document.createElement("button");
+            pageBtn.type = "button";
+            pageBtn.className = "btn btn-sm page-number";
+            if (i === currentPage) {
+                pageBtn.className += " btn-primary";
+                pageBtn.disabled = true;
+            } else {
+                pageBtn.className += " btn-outline-secondary";
+            }
+            pageBtn.textContent = i;
+            pageBtn.addEventListener("click", function (page) {
+                return function () {
+                    loadPage(page, currentSearch, currentPerPage, currentSortBy, currentSortOrder);
+                };
+            }(i));
+            pageNumbersContainer.appendChild(pageBtn);
+        }
+
+        if (endPage < totalPages) {
+            if (endPage < totalPages - 1) {
+                var ellipsis2 = document.createElement("span");
+                ellipsis2.className = "page-number";
+                ellipsis2.textContent = "...";
+                pageNumbersContainer.appendChild(ellipsis2);
+            }
+
+            var lastPageBtn = document.createElement("button");
+            lastPageBtn.type = "button";
+            lastPageBtn.className = "btn btn-outline-secondary btn-sm page-number";
+            lastPageBtn.textContent = totalPages;
+            lastPageBtn.addEventListener("click", function () {
+                loadPage(totalPages, currentSearch, currentPerPage, currentSortBy, currentSortOrder);
+            });
+            pageNumbersContainer.appendChild(lastPageBtn);
+        }
+    }
+
+    function updateSortHeaders() {
+        var headers = document.querySelectorAll(".sort-header");
+        headers.forEach(function (header) {
+            var icon = header.querySelector(".sort-icon i");
+            var column = header.dataset.sortColumn;
+            if (column === currentSortBy) {
+                icon.className = currentSortOrder === "asc" ? "fa fa-sort-up" : "fa fa-sort-down";
+                header.querySelector(".sort-icon").classList.add("active");
+            } else {
+                icon.className = "fa fa-sort";
+                header.querySelector(".sort-icon").classList.remove("active");
+            }
+        });
+    }
+
+    function showLoadingSpinner(show) {
+        var spinner = document.getElementById("loading-spinner");
+        if (show) {
+            spinner.classList.remove("d-none");
+        } else {
+            spinner.classList.add("d-none");
+        }
+    }
+
+    // Event Listeners
     modalSaveBtn.addEventListener("click", function () {
         if (isCreatingRow) {
-            var newSource = buildRowData({});
+            var newId = -(++newRowIdCounter);
+            var newSource = buildRowData({}, newId);
             if (updateRowFromModal(null, newSource)) {
-                addRow(newSource);
+                locallyAddedRows.push(newSource);
+                addRow(newSource, true);
                 editModal.hide();
                 currentEditingRow = null;
                 isCreatingRow = false;
@@ -302,7 +481,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (currentEditingRow) {
             var source = getRowDataFromTr(currentEditingRow);
-
             if (updateRowFromModal(currentEditingRow, source)) {
                 editModal.hide();
                 currentEditingRow = null;
@@ -326,8 +504,56 @@ document.addEventListener("DOMContentLoaded", function () {
 
     saveButton.addEventListener("click", saveSheet);
 
-    if (existingRows.length) {
-        existingRows.forEach(addRow);
-    }
+    // Search with debouncing
+    searchInput.addEventListener("input", function () {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(function () {
+            loadPage(1, searchInput.value.trim(), currentPerPage, currentSortBy, currentSortOrder);
+        }, 500);
+    });
+
+    // Per-page selector
+    perPageSelect.addEventListener("change", function () {
+        currentPerPage = parseInt(perPageSelect.value);
+        loadPage(1, currentSearch, currentPerPage, currentSortBy, currentSortOrder);
+    });
+
+    // Clear filters
+    clearFiltersBtn.addEventListener("click", function () {
+        searchInput.value = "";
+        perPageSelect.value = "10";
+        currentPerPage = 10;
+        currentSearch = "";
+        loadPage(1, "", 10, "id", "asc");
+    });
+
+    // Pagination buttons
+    prevPageBtn.addEventListener("click", function () {
+        if (currentPage > 1) {
+            loadPage(currentPage - 1, currentSearch, currentPerPage, currentSortBy, currentSortOrder);
+        }
+    });
+
+    nextPageBtn.addEventListener("click", function () {
+        if (currentPage < totalPages) {
+            loadPage(currentPage + 1, currentSearch, currentPerPage, currentSortBy, currentSortOrder);
+        }
+    });
+
+    // Sort headers
+    var sortHeaders = document.querySelectorAll(".sort-header");
+    sortHeaders.forEach(function (header) {
+        header.addEventListener("click", function () {
+            var column = header.dataset.sortColumn;
+            var newOrder = "asc";
+            if (currentSortBy === column && currentSortOrder === "asc") {
+                newOrder = "desc";
+            }
+            loadPage(1, currentSearch, currentPerPage, column, newOrder);
+        });
+    });
+
+    // Initial load
+    loadPage(1, "", currentPerPage, currentSortBy, currentSortOrder);
 });
 
