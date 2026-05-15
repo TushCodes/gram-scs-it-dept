@@ -307,7 +307,18 @@ document.addEventListener("DOMContentLoaded", function () {
             locallyAddedRows = [];
             newRowIdCounter = 0;
             setTimeout(function () {
-                loadPage(1, currentSearch, currentPerPage, currentSortBy, currentSortOrder);
+                // Prefer server-provided total (after commit) to compute the
+                // page that will contain newly inserted rows. Fall back to
+                // an estimate using the locally tracked counts.
+                try {
+                    var totalAfter = (data && typeof data.total === 'number')
+                        ? data.total
+                        : (totalRows + (locallyAddedRows ? locallyAddedRows.length : 0) - (data.deleted_count || 0));
+                    var lastPage = Math.max(1, Math.ceil(totalAfter / currentPerPage));
+                    loadPage(lastPage, currentSearch, currentPerPage, currentSortBy, currentSortOrder);
+                } catch (e) {
+                    loadPage(1, currentSearch, currentPerPage, currentSortBy, currentSortOrder);
+                }
             }, 1200);
         } catch (error) {
             showStatus("<strong>Save failed.</strong> " + escapeHtml(error.message || "Please check the row values and try again."), "danger");
@@ -553,7 +564,29 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     });
 
-    // Initial load
-    loadPage(1, "", currentPerPage, currentSortBy, currentSortOrder);
+    // Initial load: prefer server-rendered `data-existing-rows` when present
+    (function initialLoad() {
+        var existingJson = tableBody.dataset.existingRows || "";
+        if (existingJson) {
+            try {
+                var existingRows = JSON.parse(existingJson || "[]") || [];
+                if (existingRows.length) {
+                    tableBody.innerHTML = "";
+                    existingRows.forEach(function (row) { addRow(row, false); });
+                    totalRows = existingRows.length;
+                    totalPages = Math.max(1, Math.ceil(totalRows / currentPerPage));
+                    currentPage = 1;
+                    updatePaginationUI();
+                    updateSortHeaders();
+                    return;
+                }
+            } catch (e) {
+                // Fall through to API load on parse error
+            }
+        }
+
+        // Fallback to paginated API load
+        loadPage(1, "", currentPerPage, currentSortBy, currentSortOrder);
+    })();
 });
 
