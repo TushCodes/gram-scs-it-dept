@@ -184,48 +184,60 @@ def _seed_development_consignment_data():
     from app.models import Consignment
 
     try:
-        if Consignment.query.first():
+        # If the DB already has 100 or more consignments, do nothing.
+        existing_count = Consignment.query.count()
+        if existing_count >= 100:
             return
 
-        sample_consignment_data = [
-            Consignment(
-                consignment_number='TEST123',
-                status='In Transit',
-                pickup_address='123 Test Street, Test City',
-                pickup_pincode='110001',
-                pickup_date='2026-05-01',
-                drop_address='456 Delivery Rd, Destination City',
-                drop_pincode='400001',
-                drop_date='2026-05-04',
-                eta='2026-05-04 16:00',
-            ),
-            Consignment(
-                consignment_number='HOME123',
-                status='Out for Delivery',
-                pickup_address='789 Origin Ave, Origin City',
-                pickup_pincode='560001',
-                pickup_date='2026-05-02',
-                drop_address='101 Arrival Blvd, Final City',
-                drop_pincode='600001',
-                drop_date='2026-05-05',
-                eta='2026-05-05 12:30',
-            ),
-            Consignment(
-                consignment_number='ABC123',
-                status='Delivered',
-                pickup_address='15 Shipping Lane, Start City',
-                pickup_pincode='700001',
-                pickup_date='2026-04-28',
-                drop_address='29 Destination St, End City',
-                drop_pincode='800001',
-                drop_date='2026-04-30',
-                eta='2026-04-30 10:00',
-            ),
-        ]
+        # Build deterministic sample consignments and avoid duplicates.
+        sample_consignment_data = []
+        statuses = ['Pickup Scheduled', 'In Transit', 'Out for Delivery', 'Delivered']
+        existing_numbers = {row[0] for row in Consignment.query.with_entities(Consignment.consignment_number).all()}
 
-        db.session.add_all(sample_consignment_data)
-        db.session.commit()
-        logger.info('Seeded %d development consignments', len(sample_consignment_data))
+        for i in range(1, 101):
+            cn = f"DEV{str(i).zfill(4)}"
+            if cn in existing_numbers:
+                continue
+
+            status = statuses[i % len(statuses)]
+            pickup_pincode = str(110000 + (i % 900000))[:6]
+            drop_pincode = str(400000 + (i % 500000))[:6]
+            pickup_address = f"{i} Dev Pickup St, Dev City {i % 10}"
+            drop_address = f"{i} Dev Drop Ave, Dest City {i % 10}"
+            pickup_date = f"2026-05-{(i % 28) + 1:02d}"
+            drop_date = f"2026-06-{(i % 28) + 1:02d}"
+            eta = f"2026-06-{(i % 28) + 1:02d} 12:00"
+
+            sample_consignment_data.append(
+                Consignment(
+                    consignment_number=cn,
+                    status=status,
+                    pickup_address=pickup_address,
+                    pickup_pincode=pickup_pincode,
+                    pickup_date=pickup_date,
+                    drop_address=drop_address,
+                    drop_pincode=drop_pincode,
+                    drop_date=drop_date,
+                    eta=eta,
+                    pickup_tag=f"PICK{i % 5}",
+                    drop_tag=f"DROP{i % 7}",
+                )
+            )
+
+        # Only add as many rows as necessary to reach 100 total.
+        to_add = []
+        remaining = max(0, 100 - existing_count)
+        for item in sample_consignment_data:
+            if remaining <= 0:
+                break
+            to_add.append(item)
+            remaining -= 1
+
+        if to_add:
+            db.session.add_all(to_add)
+            db.session.commit()
+
+        logger.info('Seeded development consignments; total now %d (added %d)', Consignment.query.count(), len(to_add))
     except Exception as e:
         db.session.rollback()
         logger.exception('Failed to seed development consignments: %s', e)

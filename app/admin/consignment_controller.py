@@ -225,6 +225,22 @@ def consignments_save():
         return jsonify({"success": False, "message": "Invalid request payload."}), 400
 
     try:
+        # Debug logging: record incoming payload and per-row id types to diagnose
+        logger.info("consignments_save incoming payload: %s", payload)
+        logger.info("consignments_save deleted_ids (raw): %s", deleted_ids)
+        for idx, r in enumerate(rows):
+            try:
+                raw_id = r.get("id")
+            except Exception:
+                raw_id = None
+            logger.info(
+                "consignments_save row %d raw_id=%r type=%s consignment_number=%r",
+                idx,
+                raw_id,
+                type(raw_id).__name__ if raw_id is not None else "None",
+                r.get("consignment_number"),
+            )
+
         existing = {c.id: c for c in Consignment.query.all()}
         validated_deleted_ids = set()
 
@@ -233,6 +249,10 @@ def consignments_save():
                 deleted_id = int(raw_deleted_id)
             except (TypeError, ValueError):
                 return jsonify({"success": False, "message": f"Invalid deleted row id: {raw_deleted_id}"}), 400
+
+            # Ignore client-side temporary ids (non-positive values)
+            if deleted_id <= 0:
+                continue
 
             if deleted_id not in existing:
                 return jsonify({"success": False, "message": f"Deleted row id {deleted_id} not found."}), 400
@@ -261,20 +281,24 @@ def consignments_save():
                 }), 400
             seen_numbers.add(consignment_number)
 
-            if row_id:
+            if row_id is not None:
                 try:
                     row_id = int(row_id)
                 except (TypeError, ValueError):
                     return jsonify({"success": False, "message": f"Invalid row id: {row_id}"}), 400
 
-                if row_id not in existing:
-                    return jsonify({"success": False, "message": f"Row id {row_id} not found."}), 400
+                # Treat non-positive ids (client temporary ids like -1) as new rows
+                if row_id <= 0:
+                    row_id = None
+                else:
+                    if row_id not in existing:
+                        return jsonify({"success": False, "message": f"Row id {row_id} not found."}), 400
 
-                if row_id in validated_deleted_ids:
-                    return jsonify({
-                        "success": False,
-                        "message": f"Row id {row_id} cannot be updated and deleted in the same save."
-                    }), 400
+                    if row_id in validated_deleted_ids:
+                        return jsonify({
+                            "success": False,
+                            "message": f"Row id {row_id} cannot be updated and deleted in the same save."
+                        }), 400
             else:
                 row_id = None
 
@@ -321,10 +345,18 @@ def consignments_save():
             consignment.eta = row["eta"]
 
         db.session.commit()
+        # Return the updated total so the client can navigate to the page
+        # that will contain newly inserted rows (the new last page).
+        try:
+            total = Consignment.query.count()
+        except Exception:
+            total = None
+
         return jsonify({
             "success": True,
             "message": "Sheet saved successfully.",
             "deleted_count": len(validated_deleted_ids),
+            "total": total,
         })
 
     except IntegrityError:
