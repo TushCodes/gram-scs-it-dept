@@ -292,3 +292,7 @@ nohup: ignoring input
 2026-05-15 07:01:40,813 - werkzeug - INFO - 127.0.0.1 - - [15/May/2026 07:01:40] "GET /admin/consignments/list?page=1&per_page=10&search=&sort_by=id&sort_order=asc HTTP/1.1" 200 -
 2026-05-15 07:01:44,325 - werkzeug - INFO - 127.0.0.1 - - [15/May/2026 07:01:44] "GET /admin/consignments/list?page=25&per_page=10&search=&sort_by=id&sort_order=asc HTTP/1.1" 200 -
 2026-05-15 07:01:47,525 - werkzeug - INFO - 127.0.0.1 - - [15/May/2026 07:01:47] "GET /admin/consignments/list?page=24&per_page=10&search=&sort_by=id&sort_order=asc HTTP/1.1" 200 -
+2026-05-15 07:03:45,192 - werkzeug - INFO -  * Detected change in '/workspaces/gram-scs-it-dept/app/admin/consignment_controller.py', reloading
+2026-05-15 07:03:45,283 - werkzeug - INFO -  * Restarting with stat
+2026-05-15 07:03:46,449 - werkzeug - WARNING -  * Debugger is active!
+2026-05-15 07:03:46,449 - werkzeug - INFO -  * Debugger PIN: 153-659-670
