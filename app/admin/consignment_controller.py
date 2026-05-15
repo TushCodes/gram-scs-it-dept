@@ -40,7 +40,15 @@ def _is_missing_column_error(error):
 @require_admin
 def consignments_panel():
     try:
-        consignments = Consignment.query.order_by(Consignment.id.asc()).all()
+        # Avoid loading the entire table into memory for the admin panel.
+        # For large datasets render a small sample and let the client use the paginated API.
+        total = Consignment.query.count()
+        if total > 500:
+            consignments = []
+            logger.info("consignments_panel: large table detected (total=%d); rendering empty sample and deferring to API", total)
+        else:
+            consignments = Consignment.query.order_by(Consignment.id.asc()).limit(200).all()
+
         rows = [
             {
                 "id": c.id,

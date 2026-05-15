@@ -277,14 +277,19 @@ document.addEventListener("DOMContentLoaded", function () {
             saveButton.textContent = "Saving...";
             showStatus('<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Saving rows to database...', "info");
 
+            // Use AbortController to avoid hanging indefinitely
+            var ac = new AbortController();
+            var timeoutId = setTimeout(function () { ac.abort(); }, 15000);
             var response = await fetch(saveUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     rows: rawRows,
                     deleted_ids: Array.from(deletedIds)
-                })
+                }),
+                signal: ac.signal
             });
+            clearTimeout(timeoutId);
 
             if (response.status === 401) {
                 throw new Error("Your session has expired. Please refresh the page and log in again.");
@@ -345,7 +350,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
             showLoadingSpinner(true);
 
-            var response = await fetch(listUrl + "?" + params.toString());
+            // Abort fetch if it takes too long to respond
+            var ac = new AbortController();
+            var timeoutId = setTimeout(function () { ac.abort(); }, 15000);
+            var response = await fetch(listUrl + "?" + params.toString(), { signal: ac.signal });
+            clearTimeout(timeoutId);
             var data = await response.json();
 
             if (!response.ok || !data.success) {
