@@ -245,6 +245,12 @@ def _seed_development_consignment_data():
 
 def create_app():
     app = Flask(__name__)
+    # Log effective PORT so platform startup probes can be debugged in deployment logs.
+    try:
+        effective_port = os.getenv('PORT', '10000')
+        logger.info('STARTUP: effective PORT=%s', effective_port)
+    except Exception:
+        logger.exception('Failed to log STARTUP port')
 
     # DATABASE CONFIG
     db_uri = _require_database_uri()

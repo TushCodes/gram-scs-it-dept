@@ -1,0 +1,32 @@
+nohup: ignoring input
+[2026-05-15 07:13:50 +0000] [20325] [INFO] Starting gunicorn 25.1.0
+[2026-05-15 07:13:50 +0000] [20325] [INFO] Listening at: http://0.0.0.0:10000 (20325)
+[2026-05-15 07:13:50 +0000] [20325] [INFO] Using worker: gthread
+[2026-05-15 07:13:50 +0000] [20325] [INFO] Control socket listening at /workspaces/gram-scs-it-dept/gunicorn.ctl
+[2026-05-15 07:13:50 +0000] [20340] [INFO] Booting worker with pid: 20340
+2026-05-15 07:13:50,503 - app - INFO - STARTUP: effective PORT=10000
+127.0.0.1 - - [15/May/2026:07:13:52 +0000] "GET /health HTTP/1.1" 200 51 "-" "curl/8.5.0"
+127.0.0.1 - - [15/May/2026:07:14:01 +0000] "GET / HTTP/1.1" 200 37333 "https://github.com/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+127.0.0.1 - - [15/May/2026:07:14:01 +0000] "GET /static/assets/css/pages/home/index-custom.css HTTP/1.1" 200 0 "https://verbose-barnacle-xvwwv5r4jv4cprwp-10000.app.github.dev/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+127.0.0.1 - - [15/May/2026:07:14:01 +0000] "GET /static/css/bootstrap.css HTTP/1.1" 200 0 "https://verbose-barnacle-xvwwv5r4jv4cprwp-10000.app.github.dev/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+127.0.0.1 - - [15/May/2026:07:14:01 +0000] "GET /static/css/css_slider.css HTTP/1.1" 200 0 "https://verbose-barnacle-xvwwv5r4jv4cprwp-10000.app.github.dev/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+127.0.0.1 - - [15/May/2026:07:14:02 +0000] "GET /static/images/logo.png HTTP/1.1" 200 0 "https://verbose-barnacle-xvwwv5r4jv4cprwp-10000.app.github.dev/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+127.0.0.1 - - [15/May/2026:07:14:02 +0000] "GET /static/js/menu.js HTTP/1.1" 200 0 "https://verbose-barnacle-xvwwv5r4jv4cprwp-10000.app.github.dev/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+127.0.0.1 - - [15/May/2026:07:14:02 +0000] "GET /static/css/font-awesome.min.css HTTP/1.1" 200 0 "https://verbose-barnacle-xvwwv5r4jv4cprwp-10000.app.github.dev/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+127.0.0.1 - - [15/May/2026:07:14:02 +0000] "GET /static/images/g3.jpg HTTP/1.1" 200 0 "https://verbose-barnacle-xvwwv5r4jv4cprwp-10000.app.github.dev/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+127.0.0.1 - - [15/May/2026:07:14:02 +0000] "GET /static/images/g2.jpg HTTP/1.1" 200 0 "https://verbose-barnacle-xvwwv5r4jv4cprwp-10000.app.github.dev/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+127.0.0.1 - - [15/May/2026:07:14:02 +0000] "GET /static/images/g4.jpg HTTP/1.1" 200 0 "https://verbose-barnacle-xvwwv5r4jv4cprwp-10000.app.github.dev/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+127.0.0.1 - - [15/May/2026:07:14:02 +0000] "GET /static/js/index-page.js HTTP/1.1" 200 0 "https://verbose-barnacle-xvwwv5r4jv4cprwp-10000.app.github.dev/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+127.0.0.1 - - [15/May/2026:07:14:02 +0000] "GET /static/js/index.js HTTP/1.1" 200 0 "https://verbose-barnacle-xvwwv5r4jv4cprwp-10000.app.github.dev/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+127.0.0.1 - - [15/May/2026:07:14:02 +0000] "GET /static/images/g5.jpg HTTP/1.1" 200 0 "https://verbose-barnacle-xvwwv5r4jv4cprwp-10000.app.github.dev/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+127.0.0.1 - - [15/May/2026:07:14:02 +0000] "GET /static/images/g1.jpg HTTP/1.1" 200 0 "https://verbose-barnacle-xvwwv5r4jv4cprwp-10000.app.github.dev/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+127.0.0.1 - - [15/May/2026:07:14:02 +0000] "GET /static/images/g6.jpg HTTP/1.1" 200 0 "https://verbose-barnacle-xvwwv5r4jv4cprwp-10000.app.github.dev/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+127.0.0.1 - - [15/May/2026:07:14:02 +0000] "GET /static/fonts/fontawesome-webfont.woff2?v=4.7.0 HTTP/1.1" 200 0 "https://verbose-barnacle-xvwwv5r4jv4cprwp-10000.app.github.dev/static/css/font-awesome.min.css" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+127.0.0.1 - - [15/May/2026:07:14:02 +0000] "GET /static/js/animations.js HTTP/1.1" 200 0 "https://verbose-barnacle-xvwwv5r4jv4cprwp-10000.app.github.dev/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+127.0.0.1 - - [15/May/2026:07:14:04 +0000] "GET /static/js/index.js HTTP/1.1" 200 0 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+127.0.0.1 - - [15/May/2026:07:14:04 +0000] "GET /static/js/index-page.js HTTP/1.1" 200 0 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+127.0.0.1 - - [15/May/2026:07:14:04 +0000] "GET /static/js/menu.js HTTP/1.1" 200 0 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+127.0.0.1 - - [15/May/2026:07:14:04 +0000] "GET /static/js/animations.js HTTP/1.1" 200 0 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+[2026-05-15 07:14:44 +0000] [20325] [INFO] Handling signal: term
+[2026-05-15 07:14:44 +0000] [20340] [INFO] Worker exiting (pid: 20340)
+[2026-05-15 07:15:14 +0000] [20325] [INFO] Shutting down: Master
