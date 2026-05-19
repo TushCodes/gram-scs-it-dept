@@ -4,6 +4,13 @@ document.addEventListener("DOMContentLoaded", function () {
     var addRowButton = document.getElementById("add-row-btn");
     var editModal = new bootstrap.Modal(document.getElementById("editConsignmentModal"));
     var modalSaveBtn = document.getElementById("modal-save-btn");
+    var modalPodFile = document.getElementById("modal-pod-file");
+    var modalPodPreview = document.getElementById("modal-pod-preview-container");
+    var modalPodRemoveBtn = document.getElementById("modal-pod-remove");
+    var modalPodView = document.getElementById("modal-pod-view");
+    var podViewerModalEl = document.getElementById("podViewerModal");
+    var podViewerModal = podViewerModalEl ? new bootstrap.Modal(podViewerModalEl) : null;
+    var podViewerContent = document.getElementById("pod-viewer-content");
     var searchInput = document.getElementById("search-input");
     var perPageSelect = document.getElementById("per-page-select");
     var clearFiltersBtn = document.getElementById("clear-filters-btn");
@@ -31,6 +38,7 @@ document.addEventListener("DOMContentLoaded", function () {
     var locallyAddedRows = [];
     var modifiedRowIds = new Set();
     var newRowIdCounter = 0;
+    var stagedPodUpload = null;
 
     function showStatus(message, type) {
         var el = document.getElementById("status-msg");
@@ -90,9 +98,34 @@ document.addEventListener("DOMContentLoaded", function () {
         document.getElementById("modal-drop-pincode").value = row.drop_pincode || "";
         document.getElementById("modal-drop-tag").value = row.drop_tag || "";
         document.getElementById("modal-drop-date").value = row.drop_date || "";
+        // POD preview and controls
+        try {
+            if (row.pod_image) {
+                modalPodPreview.innerHTML = '<span class="text-success">POD uploaded.</span>';
+                modalPodView.style.display = '';
+                modalPodView.dataset.id = row.id || '';
+                modalPodView.dataset.pod = encodeURIComponent(row.pod_image || '');
+            } else if (row.pod_file_name) {
+                modalPodPreview.innerHTML = '<span class="text-info">POD ready: ' + escapeHtml(row.pod_file_name) + '</span>';
+                modalPodView.style.display = '';
+                modalPodView.dataset.id = row.id || '';
+                modalPodView.dataset.pod = encodeURIComponent(row.pod_file_data || '');
+            } else {
+                modalPodPreview.innerHTML = '<em class="text-muted">No POD uploaded.</em>';
+                modalPodView.style.display = 'none';
+                modalPodView.dataset.id = '';
+                modalPodView.dataset.pod = '';
+            }
+        } catch (e) {
+            // ignore if modal controls missing
+        }
     }
 
     function clearModal() {
+        stagedPodUpload = null;
+        if (modalPodFile) {
+            modalPodFile.value = "";
+        }
         populateModal({
             consignment_number: "",
             status: "",
@@ -104,7 +137,11 @@ document.addEventListener("DOMContentLoaded", function () {
             drop_pincode: "",
             drop_tag: "",
             drop_date: "",
-            eta: ""
+            eta: "",
+            pod_image: null,
+            pod_file_name: null,
+            pod_file_type: null,
+            pod_file_data: null
         });
     }
 
@@ -122,7 +159,11 @@ document.addEventListener("DOMContentLoaded", function () {
             drop_pincode: data.drop_pincode || "",
             drop_tag: data.drop_tag || "",
             drop_date: data.drop_date || "",
-            eta: data.eta || ""
+            eta: data.eta || "",
+            pod_image: data.pod_image || null,
+            pod_file_name: data.pod_file_name || null,
+            pod_file_type: data.pod_file_type || null,
+            pod_file_data: data.pod_file_data || null
         };
     }
 
@@ -151,6 +192,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
         var rowClass = isLocal ? 'table-info' : '';
 
+        var podCellHtml = "<span class=\"text-muted small\">—</span>";
+        if (source.pod_image) {
+            podCellHtml = '<button type="button" class="btn btn-sm btn-outline-secondary view-pod">View</button>';
+        } else if (source.pod_file_name) {
+            podCellHtml = '<button type="button" class="btn btn-sm btn-outline-secondary view-pod">View</button>';
+        }
+
         tr.innerHTML =
             "<td>" + consignmentNum + "</td>" +
             "<td>" + status + "</td>" +
@@ -158,6 +206,7 @@ document.addEventListener("DOMContentLoaded", function () {
             "<td>" + dropPin + "</td>" +
             "<td>" + pickupDate + "</td>" +
             "<td>" + dropEta + "</td>" +
+            "<td class=\"text-center\">" + podCellHtml + "</td>" +
             "<td class=\"text-center\"><button type=\"button\" class=\"btn btn-sm btn-outline-primary edit-row\" title=\"Edit\"><i class=\"fa fa-pencil\"></i></button></td>" +
             "<td class=\"text-center\"><button type=\"button\" class=\"btn btn-sm btn-outline-danger delete-row\" title=\"Delete\"><i class=\"fa fa-times\"></i></button></td>";
 
@@ -192,6 +241,14 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         tableBody.appendChild(tr);
+
+        // attach view-pod listener if present
+        var viewBtn = tr.querySelector('.view-pod');
+        if (viewBtn) {
+            viewBtn.addEventListener('click', function () {
+                openPodViewer(getRowDataFromTr(tr));
+            });
+        }
     }
 
     function updateRowFromModal(tr, source) {
@@ -224,6 +281,9 @@ document.addEventListener("DOMContentLoaded", function () {
         source.drop_pincode = normalizePincode(dropPincode);
         source.drop_tag = document.getElementById("modal-drop-tag").value.trim();
         source.drop_date = document.getElementById("modal-drop-date").value.trim();
+        source.pod_file_name = stagedPodUpload ? stagedPodUpload.name : (source.pod_file_name || null);
+        source.pod_file_type = stagedPodUpload ? stagedPodUpload.type : (source.pod_file_type || null);
+        source.pod_file_data = stagedPodUpload ? stagedPodUpload.dataUrl : (source.pod_file_data || null);
 
         if (tr) {
             tr.cells[0].textContent = source.consignment_number || "";
@@ -234,6 +294,24 @@ document.addEventListener("DOMContentLoaded", function () {
             tr.cells[3].textContent = source.drop_pincode || "";
             tr.cells[4].textContent = source.pickup_date || "";
             tr.cells[5].textContent = source.drop_date || source.eta || "";
+
+            // update POD cell (cell index 6)
+            try {
+                var podCell = tr.cells[6];
+                if (podCell) {
+                    if (source.pod_image || source.pod_file_data) {
+                        podCell.innerHTML = '<button type="button" class="btn btn-sm btn-outline-secondary view-pod">View</button>';
+                        var vp = podCell.querySelector('.view-pod');
+                        if (vp) {
+                            vp.addEventListener('click', function () {
+                                openPodViewer(getRowDataFromTr(tr));
+                            });
+                        }
+                    } else {
+                        podCell.innerHTML = '<span class="text-muted small">—</span>';
+                    }
+                }
+            } catch (e) {}
 
             // Track modification
             var rowId = tr.dataset.id ? Number(tr.dataset.id) : null;
@@ -521,6 +599,101 @@ document.addEventListener("DOMContentLoaded", function () {
         isCreatingRow = false;
         clearModal();
     });
+
+    // POD chooser: stage selected image silently until the modal Save button is clicked.
+    if (modalPodFile) {
+        modalPodFile.addEventListener('change', function () {
+            var file = modalPodFile.files && modalPodFile.files[0];
+            if (!file) {
+                stagedPodUpload = null;
+                return;
+            }
+
+            if (!/^image\//.test(file.type || '')) {
+                modalPodFile.value = null;
+                stagedPodUpload = null;
+                return;
+            }
+
+            var reader = new FileReader();
+            reader.onload = function () {
+                stagedPodUpload = {
+                    name: file.name,
+                    type: file.type,
+                    dataUrl: String(reader.result || ""),
+                    file: file,
+                };
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    if (modalPodRemoveBtn) {
+        modalPodRemoveBtn.addEventListener('click', async function () {
+            if (!currentEditingRow || !(currentEditingRow.dataset && currentEditingRow.dataset.id)) {
+                // For new rows just clear preview
+                modalPodPreview.innerHTML = '<em class="text-muted">No POD uploaded.</em>';
+                modalPodView.style.display = 'none';
+                return;
+            }
+            var rowId = Number(currentEditingRow.dataset.id) || null;
+            if (!rowId || rowId <= 0) {
+                modalPodPreview.innerHTML = '<em class="text-muted">No POD uploaded.</em>';
+                modalPodView.style.display = 'none';
+                return;
+            }
+
+            if (!confirm('Remove POD for this consignment? This will delete the file.')) return;
+
+            try {
+                var resp = await fetch('/admin/consignments/' + rowId + '/pod', { method: 'DELETE' });
+                var data = await resp.json();
+                if (!resp.ok || !data.success) throw new Error(data.message || 'Delete failed');
+
+                // Update UI
+                try {
+                    var tr = currentEditingRow;
+                    var rowData = getRowDataFromTr(tr);
+                    rowData.pod_image = null;
+                    rowData.pod_file_name = null;
+                    rowData.pod_file_type = null;
+                    rowData.pod_file_data = null;
+                    tr.dataset.row = JSON.stringify(rowData);
+                    var podCell = tr.cells[6];
+                    if (podCell) podCell.innerHTML = '<span class="text-muted small">—</span>';
+                    modalPodPreview.innerHTML = '<em class="text-muted">No POD uploaded.</em>';
+                    modalPodView.style.display = 'none';
+                    try { modalPodView.dataset.id = ''; modalPodView.dataset.pod = ''; } catch (e) {}
+                    showStatus('POD removed.', 'success');
+                } catch (e) {}
+
+            } catch (err) {
+                showStatus('Failed to remove POD: ' + (err.message || ''), 'danger');
+            }
+        });
+    }
+
+    // Open POD viewer when modal's 'View POD' button clicked
+    if (modalPodView) {
+        modalPodView.addEventListener('click', function () {
+            openPodViewer(currentEditingRow ? getRowDataFromTr(currentEditingRow) : null);
+        });
+    }
+
+    function openPodViewer(rowData) {
+        if (!podViewerModal || !podViewerContent) return;
+        rowData = rowData || {};
+        var podPath = rowData.pod_image || rowData.pod_file_data || '';
+        if (!podPath) {
+            podViewerContent.innerHTML = '<div class="text-center text-muted">No POD available.</div>';
+            podViewerModal.show();
+            return;
+        }
+
+        var imageSource = rowData.pod_image ? '/admin/consignments/' + rowData.id + '/pod' : podPath;
+        podViewerContent.innerHTML = '<img src="' + imageSource + '" style="max-width:100%;max-height:75vh;height:auto;display:block;margin:0 auto;" />';
+        podViewerModal.show();
+    }
 
     saveButton.addEventListener("click", saveSheet);
 

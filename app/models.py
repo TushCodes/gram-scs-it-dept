@@ -17,6 +17,8 @@ class Consignment(db.Model):
     drop_date = db.Column(db.String(100))
     eta = db.Column(db.String(100))
     eta_debug_json = db.Column(db.Text)
+    # URL or internal path to the Proof-Of-Delivery (POD) image/file
+    pod_image = db.Column(db.String(1024))
 
 
 class Lead(db.Model):
