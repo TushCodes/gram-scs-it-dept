@@ -39,6 +39,7 @@ document.addEventListener("DOMContentLoaded", function () {
     var modifiedRowIds = new Set();
     var newRowIdCounter = 0;
     var stagedPodUpload = null;
+    var statusTimeoutId = null;
 
     function showStatus(message, type) {
         var el = document.getElementById("status-msg");
@@ -49,6 +50,17 @@ document.addEventListener("DOMContentLoaded", function () {
         el.className = "alert alert-" + type + " shadow-sm border-0";
         el.classList.remove("d-none");
         el.scrollIntoView({ behavior: "smooth", block: "center" });
+        // Auto-dismiss status messages after 10 seconds
+        try {
+            if (statusTimeoutId) {
+                clearTimeout(statusTimeoutId);
+            }
+            statusTimeoutId = setTimeout(function () {
+                try {
+                    el.classList.add('d-none');
+                } catch (e) {}
+            }, 10000);
+        } catch (e) {}
     }
 
     function escapeHtml(text) {
@@ -630,14 +642,36 @@ document.addEventListener("DOMContentLoaded", function () {
 
     if (modalPodRemoveBtn) {
         modalPodRemoveBtn.addEventListener('click', async function () {
-            if (!currentEditingRow || !(currentEditingRow.dataset && currentEditingRow.dataset.id)) {
-                // For new rows just clear preview
+            if (!currentEditingRow) {
                 modalPodPreview.innerHTML = '<em class="text-muted">No POD uploaded.</em>';
                 modalPodView.style.display = 'none';
                 return;
             }
+
+            // Read the current row data to determine whether the POD exists on the server
+            var rowData = getRowDataFromTr(currentEditingRow) || {};
+
+            // If the row only has a staged upload (client-side) but no persisted `pod_image`,
+            // clear the staged preview locally instead of calling the DELETE endpoint.
+            if (!rowData.pod_image && (rowData.pod_file_data || rowData.pod_file_name)) {
+                // Clear staged upload
+                stagedPodUpload = null;
+                try {
+                    rowData.pod_file_data = null;
+                    rowData.pod_file_name = null;
+                    rowData.pod_file_type = null;
+                    currentEditingRow.dataset.row = JSON.stringify(rowData);
+                } catch (e) {}
+                modalPodFile.value = '';
+                modalPodPreview.innerHTML = '<em class="text-muted">No POD uploaded.</em>';
+                modalPodView.style.display = 'none';
+                showStatus('Cleared staged POD (not yet saved).', 'info');
+                return;
+            }
+
             var rowId = Number(currentEditingRow.dataset.id) || null;
             if (!rowId || rowId <= 0) {
+                // No persisted row id — nothing to delete server-side
                 modalPodPreview.innerHTML = '<em class="text-muted">No POD uploaded.</em>';
                 modalPodView.style.display = 'none';
                 return;
@@ -646,8 +680,23 @@ document.addEventListener("DOMContentLoaded", function () {
             if (!confirm('Remove POD for this consignment? This will delete the file.')) return;
 
             try {
-                var resp = await fetch('/admin/consignments/' + rowId + '/pod', { method: 'DELETE' });
-                var data = await resp.json();
+                var resp = await fetch('/admin/consignments/' + rowId + '/pod', {
+                    method: 'DELETE',
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json' },
+                });
+
+                if (resp.status === 401) {
+                    throw new Error('Authentication required. Please refresh and log in again.');
+                }
+
+                var data;
+                try {
+                    data = await resp.json();
+                } catch (e) {
+                    throw new Error('Unexpected server response.');
+                }
+
                 if (!resp.ok || !data.success) throw new Error(data.message || 'Delete failed');
 
                 // Update UI
@@ -770,5 +819,18 @@ document.addEventListener("DOMContentLoaded", function () {
         // Fallback to paginated API load
         loadPage(1, "", currentPerPage, currentSortBy, currentSortOrder);
     })();
+
+    // Auto-hide any server-rendered alerts on page load after 10s, unless they set data-autodismiss="false"
+    try {
+        setTimeout(function () {
+            var alerts = document.querySelectorAll('.alert');
+            alerts.forEach(function (a) {
+                try {
+                    if (a.dataset && a.dataset.autodismiss === 'false') return;
+                    a.classList.add('d-none');
+                } catch (e) {}
+            });
+        }, 10000);
+    } catch (e) {}
 });
 
