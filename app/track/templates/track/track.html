@@ -226,12 +226,13 @@
                         {% endif %}
                     </div>
                     <div class="track-metric">
-                        <span class="track-label">Drop</span>
+                        <span class="track-label">Delivered</span>
                         {% if consignment.drop_address %}
                         <p class="track-metric-value track-address">{{ consignment.drop_address }}</p>
                         <p class="track-metric-subtext">{{ consignment.drop_pincode or '' }}</p>
                         {% if consignment.drop_date %}
-                        <p class="track-metric-subtext">Drop Date: {{ consignment.drop_date }}</p>
+                        <p class="track-metric-subtext"> 
+                            Estimated/Actual Delivered Date: {{ consignment.drop_date }}</p>
                         {% endif %}
                         {% else %}
                         <p class="track-metric-value">{{ consignment.drop_pincode or 'Not available' }}</p>

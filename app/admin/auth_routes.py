@@ -23,7 +23,6 @@ from app.admin.auth import (
 
 logger = logging.getLogger(__name__)
 
-
 @admin_bp.route("/admin/login", methods=["GET"])
 def login():
     """Render the admin login form."""
