@@ -242,6 +242,15 @@
                         {% endif %}
                     </div>
                 </div>
+                {% if consignment %}
+                <div class="mt-3">
+                    {% if consignment.pod_image %}
+                    <button id="download-pod-btn" class="btn btn-outline-primary">Download POD</button>
+                    {% else %}
+                    <button id="download-pod-btn" class="btn btn-outline-secondary" disabled>No POD available</button>
+                    {% endif %}
+                </div>
+                {% endif %}
             </div>
 
         </div>
@@ -254,4 +263,42 @@
 {% block scripts_extra %}
 {{ super() }}
 <script src="{{ url_for('static', filename='js/menu.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+    const btn = document.getElementById('download-pod-btn');
+    if (!btn) return;
+    const url = "{{ url_for('track.consignment_pod', consignment_number=consignment.consignment_number) }}";
+    btn.addEventListener('click', async function(){
+        btn.disabled = true;
+        const original = btn.innerText;
+        btn.innerText = 'Downloading...';
+        try{
+            const res = await fetch(url);
+            if(!res.ok){
+                const body = await res.json().catch(()=>null);
+                alert(body && body.message ? body.message : 'Failed to download POD');
+                return;
+            }
+            const blob = await res.blob();
+            let filename = '{{ consignment.consignment_number or "pod" }}_pod';
+            const cd = res.headers.get('content-disposition') || '';
+            const m = cd.match(/filename\*=UTF-8''([^;]+)/) || cd.match(/filename=\"?([^\";]+)\"?/);
+            if(m) filename = decodeURIComponent(m[1]);
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(a.href);
+        }catch(e){
+            console.error(e);
+            alert('Error downloading POD');
+        }finally{
+            btn.disabled = false;
+            btn.innerText = original;
+        }
+    });
+});
+</script>
 {% endblock %}

@@ -1,6 +1,98 @@
 import io
 import logging
 import re
+import os
+import uuid
+import base64
+import binascii
+from flask import current_app
+from werkzeug.utils import secure_filename
+import io as _io
+
+# Supabase integration is optional: when SUPABASE_URL and SUPABASE_KEY are set
+# and the `supabase` package is available, uploads will go to Supabase Storage.
+def _get_supabase_client():
+    url = os.getenv('SUPABASE_URL', '').strip()
+    key = os.getenv('SUPABASE_KEY', '').strip()
+    if not url or not key:
+        return None
+    try:
+        from supabase import create_client
+    except Exception:
+        logger.warning('Supabase package not available; falling back to local uploads')
+        return None
+
+    try:
+        return create_client(url, key)
+    except Exception:
+        logger.exception('Failed to create Supabase client')
+        return None
+
+
+def _decode_pod_data_url(data_url):
+    if not data_url or not isinstance(data_url, str):
+        raise ValueError('POD file data is missing.')
+    if ',' not in data_url:
+        raise ValueError('Invalid POD file data.')
+
+    header, encoded = data_url.split(',', 1)
+    if not header.startswith('data:image/') or ';base64' not in header:
+        raise ValueError('POD file data must be a base64 encoded image.')
+
+    try:
+        file_bytes = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        raise ValueError('POD file data is invalid.')
+
+    if len(file_bytes) > MAX_POD_IMAGE_BYTES:
+        raise ValueError('POD image must be smaller than 5 MB.')
+
+    return file_bytes
+
+
+def _store_pod_bytes(filename, file_bytes, content_type=None, bucket_name=None):
+    supa = _get_supabase_client()
+    if supa:
+        bucket = bucket_name or os.getenv('SUPABASE_BUCKET', 'pod-uploads')
+        object_path = f"consignments/{filename}"
+        supa.storage.from_(bucket).upload(
+            object_path,
+            _io.BytesIO(file_bytes),
+            {'content-type': content_type or 'application/octet-stream'},
+        )
+        return f"supabase:{bucket}/{object_path}"
+
+    upload_folder = os.path.join(current_app.instance_path, "uploads")
+    os.makedirs(upload_folder, exist_ok=True)
+    dest_path = os.path.join(upload_folder, filename)
+    with open(dest_path, "wb") as file_handle:
+        file_handle.write(file_bytes)
+    return filename
+
+
+def _delete_pod_file(pod_value):
+    if not pod_value:
+        return
+
+    if isinstance(pod_value, str) and pod_value.startswith('supabase:'):
+        client = _get_supabase_client()
+        if not client:
+            return
+        try:
+            _, rest = pod_value.split(':', 1)
+            bucket, object_path = rest.split('/', 1)
+            client.storage.from_(bucket).remove([object_path])
+        except Exception:
+            logger.exception('Failed to remove POD from Supabase')
+        return
+
+    upload_folder = os.path.join(current_app.instance_path, "uploads")
+    pod_path = os.path.normpath(os.path.join(upload_folder, pod_value))
+    if pod_path.startswith(os.path.abspath(upload_folder)) and os.path.exists(pod_path):
+        try:
+            os.remove(pod_path)
+        except Exception:
+            logger.exception('Failed to remove POD file from disk')
 
 from flask import flash, jsonify, redirect, render_template, request, send_file, url_for
 from openpyxl import Workbook, load_workbook
@@ -22,6 +114,8 @@ from app.services.logistics import (
 
 logger = logging.getLogger(__name__)
 
+MAX_POD_IMAGE_BYTES = 5 * 1024 * 1024
+
 
 def _is_missing_column_error(error):
     """Return True when the database rejected a query because a column is absent."""
@@ -40,7 +134,15 @@ def _is_missing_column_error(error):
 @require_admin
 def consignments_panel():
     try:
-        consignments = Consignment.query.order_by(Consignment.id.asc()).all()
+        # Avoid loading the entire table into memory for the admin panel.
+        # For large datasets render a small sample and let the client use the paginated API.
+        total = Consignment.query.count()
+        if total > 500:
+            consignments = []
+            logger.info("consignments_panel: large table detected (total=%d); rendering empty sample and deferring to API", total)
+        else:
+            consignments = Consignment.query.order_by(Consignment.id.asc()).limit(200).all()
+
         rows = [
             {
                 "id": c.id,
@@ -55,6 +157,7 @@ def consignments_panel():
                 "drop_tag": getattr(c, "drop_tag", None),
                 "drop_date": getattr(c, "drop_date", None),
                 "eta": c.eta,
+                "pod_image": getattr(c, "pod_image", None),
             }
             for c in consignments
         ]
@@ -169,6 +272,7 @@ def consignments_list_api():
                 "drop_tag": getattr(c, "drop_tag", None),
                 "drop_date": getattr(c, "drop_date", None),
                 "eta": c.eta,
+                "pod_image": getattr(c, "pod_image", None),
             }
             for c in paginated.items
         ]
@@ -225,6 +329,22 @@ def consignments_save():
         return jsonify({"success": False, "message": "Invalid request payload."}), 400
 
     try:
+        # Debug logging: record incoming payload and per-row id types to diagnose
+        logger.info("consignments_save incoming payload: %s", payload)
+        logger.info("consignments_save deleted_ids (raw): %s", deleted_ids)
+        for idx, r in enumerate(rows):
+            try:
+                raw_id = r.get("id")
+            except Exception:
+                raw_id = None
+            logger.info(
+                "consignments_save row %d raw_id=%r type=%s consignment_number=%r",
+                idx,
+                raw_id,
+                type(raw_id).__name__ if raw_id is not None else "None",
+                r.get("consignment_number"),
+            )
+
         existing = {c.id: c for c in Consignment.query.all()}
         validated_deleted_ids = set()
 
@@ -234,6 +354,10 @@ def consignments_save():
             except (TypeError, ValueError):
                 return jsonify({"success": False, "message": f"Invalid deleted row id: {raw_deleted_id}"}), 400
 
+            # Ignore client-side temporary ids (non-positive values)
+            if deleted_id <= 0:
+                continue
+
             if deleted_id not in existing:
                 return jsonify({"success": False, "message": f"Deleted row id {deleted_id} not found."}), 400
 
@@ -241,40 +365,58 @@ def consignments_save():
 
         seen_numbers = set()
         validated_rows = []
+        errors = []
 
-        for row in rows:
+        for idx, row in enumerate(rows):
             row_id = row.get("id")
             try:
                 consignment_number = normalize_consignment_number(row.get("consignment_number"))
+            except ValueError as error:
+                errors.append({"index": idx, "field": "consignment_number", "message": str(error)})
+                consignment_number = None
+
+            try:
                 status = normalize_status(row.get("status"))
+            except ValueError as error:
+                errors.append({"index": idx, "field": "status", "message": str(error)})
+                status = None
+
+            try:
                 pickup_pincode = normalize_indian_pincode(row.get("pickup_pincode"), "pickup_pincode")
+            except ValueError as error:
+                errors.append({"index": idx, "field": "pickup_pincode", "message": str(error)})
+                pickup_pincode = None
+
+            try:
                 drop_pincode = normalize_indian_pincode(row.get("drop_pincode"), "drop_pincode")
             except ValueError as error:
-                return jsonify({"success": False, "message": str(error)}), 400
+                errors.append({"index": idx, "field": "drop_pincode", "message": str(error)})
+                drop_pincode = None
 
             eta = str(row.get("eta") or "").strip()
 
-            if consignment_number in seen_numbers:
-                return jsonify({
-                    "success": False,
-                    "message": f"Duplicate consignment number in sheet: {consignment_number}"
-                }), 400
-            seen_numbers.add(consignment_number)
+            if consignment_number:
+                if consignment_number in seen_numbers:
+                    errors.append({"index": idx, "field": "consignment_number", "message": f"Duplicate consignment number in sheet: {consignment_number}"})
+                seen_numbers.add(consignment_number)
 
-            if row_id:
+            if row_id is not None:
                 try:
                     row_id = int(row_id)
                 except (TypeError, ValueError):
-                    return jsonify({"success": False, "message": f"Invalid row id: {row_id}"}), 400
+                    errors.append({"index": idx, "field": "id", "message": f"Invalid row id: {row_id}"})
+                    row_id = None
 
-                if row_id not in existing:
-                    return jsonify({"success": False, "message": f"Row id {row_id} not found."}), 400
+                # Treat non-positive ids (client temporary ids like -1) as new rows
+                if row_id and row_id <= 0:
+                    row_id = None
+                else:
+                    if row_id and row_id not in existing:
+                        errors.append({"index": idx, "field": "id", "message": f"Row id {row_id} not found."})
+                        row_id = None
 
-                if row_id in validated_deleted_ids:
-                    return jsonify({
-                        "success": False,
-                        "message": f"Row id {row_id} cannot be updated and deleted in the same save."
-                    }), 400
+                    if row_id and row_id in validated_deleted_ids:
+                        errors.append({"index": idx, "field": "id", "message": f"Row id {row_id} cannot be updated and deleted in the same save."})
             else:
                 row_id = None
 
@@ -282,6 +424,9 @@ def consignments_save():
             pickup_date = str(row.get("pickup_date") or "").strip()
             drop_tag = str(row.get("drop_tag") or "").strip()
             drop_date = str(row.get("drop_date") or "").strip()
+            pod_file_data = str(row.get("pod_file_data") or "").strip() or None
+            pod_file_name = str(row.get("pod_file_name") or "").strip() or None
+            pod_file_type = str(row.get("pod_file_type") or "").strip() or None
 
             validated_rows.append({
                 "id": row_id,
@@ -296,7 +441,16 @@ def consignments_save():
                 "drop_tag": drop_tag,
                 "drop_date": drop_date,
                 "eta": eta,
+                "pod_image": str(row.get("pod_image") or "").strip() or None,
+                "pod_file_data": pod_file_data,
+                "pod_file_name": pod_file_name,
+                "pod_file_type": pod_file_type,
             })
+
+        # If any per-row validation errors were collected, return them instead of aborting.
+        if errors:
+            db.session.rollback()
+            return jsonify({"success": False, "errors": errors}), 400
 
         for deleted_id in validated_deleted_ids:
             db.session.delete(existing[deleted_id])
@@ -307,6 +461,22 @@ def consignments_save():
             else:
                 consignment = Consignment()
                 db.session.add(consignment)
+
+            previous_pod_image = getattr(consignment, 'pod_image', None)
+            new_pod_image = row.get("pod_image")
+
+            if row.get("pod_file_data"):
+                try:
+                    pod_bytes = _decode_pod_data_url(row["pod_file_data"])
+                    original_name = row.get("pod_file_name") or "pod.jpg"
+                    filename = f"{uuid.uuid4().hex}_{secure_filename(original_name)}"
+                    new_pod_image = _store_pod_bytes(filename, pod_bytes, row.get("pod_file_type"))
+                except ValueError as error:
+                    db.session.rollback()
+                    return jsonify({"success": False, "message": str(error)}), 400
+
+            if previous_pod_image and new_pod_image and previous_pod_image != new_pod_image:
+                _delete_pod_file(previous_pod_image)
 
             consignment.consignment_number = row["consignment_number"]
             consignment.status = row["status"]
@@ -319,12 +489,21 @@ def consignments_save():
             consignment.drop_tag = row.get("drop_tag")
             consignment.drop_date = row.get("drop_date")
             consignment.eta = row["eta"]
+            consignment.pod_image = new_pod_image
 
         db.session.commit()
+        # Return the updated total so the client can navigate to the page
+        # that will contain newly inserted rows (the new last page).
+        try:
+            total = Consignment.query.count()
+        except Exception:
+            total = None
+
         return jsonify({
             "success": True,
             "message": "Sheet saved successfully.",
             "deleted_count": len(validated_deleted_ids),
+            "total": total,
         })
 
     except IntegrityError:
@@ -601,3 +780,168 @@ def consignments_import_template_excel():
     except Exception:
         logger.exception("Template export failed")
         return jsonify({"success": False, "message": "Failed to generate import template."}), 500
+
+
+@admin_bp.route("/admin/consignments/<int:consignment_id>/pod", methods=["GET"], endpoint="consignment_pod_file")
+@require_admin
+def consignment_pod_file(consignment_id):
+    """Serve the POD file for a consignment if present."""
+    try:
+        consignment = Consignment.query.get(consignment_id)
+        if not consignment or not getattr(consignment, "pod_image", None):
+            return jsonify({"success": False, "message": "No POD found."}), 404
+
+        # pod_image may be:
+        # - a local relative filename stored under instance/uploads
+        # - a supabase marker value like "supabase:bucket/path/to/file"
+        # - a public URL (http/https)
+        pod_path = consignment.pod_image
+        if pod_path.startswith("http://") or pod_path.startswith("https://"):
+            return redirect(pod_path)
+
+        # Supabase-stored value: "supabase:bucket/path"
+        if isinstance(pod_path, str) and pod_path.startswith("supabase:"):
+            client = _get_supabase_client()
+            if not client:
+                return jsonify({"success": False, "message": "Supabase not configured."}), 500
+            try:
+                # parse
+                _, rest = pod_path.split(":", 1)
+                bucket, object_path = rest.split("/", 1)
+                # Attempt to create a signed URL (30s) then redirect
+                try:
+                    signed = client.storage.from_(bucket).create_signed_url(object_path, 30)
+                    # supabase client may return dict with 'signedURL' or 'signed_url'
+                    url = None
+                    if isinstance(signed, dict):
+                        url = signed.get('signedURL') or signed.get('signed_url') or signed.get('signedUrl')
+                    if not url:
+                        # fallback to public URL
+                        pub = client.storage.from_(bucket).get_public_url(object_path)
+                        url = pub.get('publicURL') or pub.get('publicUrl') or pub.get('publicURL')
+                    if url:
+                        return redirect(url)
+                except Exception:
+                    # fallback to public url
+                    pub = client.storage.from_(bucket).get_public_url(object_path)
+                    url = pub.get('publicURL') or pub.get('publicUrl') or pub.get('publicURL')
+                    if url:
+                        return redirect(url)
+                return jsonify({"success": False, "message": "Unable to generate POD URL."}), 500
+            except Exception:
+                logger.exception("Error generating Supabase POD URL")
+                return jsonify({"success": False, "message": "Failed to serve POD."}), 500
+
+        # Otherwise treat as local filename under instance/uploads
+        upload_folder = os.path.join(current_app.instance_path, "uploads")
+        safe_path = os.path.normpath(os.path.join(upload_folder, pod_path))
+        if not safe_path.startswith(os.path.abspath(upload_folder)):
+            return jsonify({"success": False, "message": "Invalid POD path."}), 400
+
+        if not os.path.exists(safe_path):
+            return jsonify({"success": False, "message": "POD file missing."}), 404
+
+        return send_file(safe_path)
+    except Exception:
+        logger.exception("Error serving POD file")
+        return jsonify({"success": False, "message": "Failed to serve POD."}), 500
+
+
+@admin_bp.route("/admin/consignments/<int:consignment_id>/pod", methods=["POST"], endpoint="consignment_pod_upload")
+@require_admin
+def consignment_pod_upload(consignment_id):
+    """Upload or replace a POD image for a consignment. Returns JSON with new pod path/url."""
+    upload = request.files.get("file")
+    if not upload or not upload.filename:
+        return jsonify({"success": False, "message": "No file uploaded."}), 400
+
+    if not (upload.mimetype or "").startswith("image/"):
+        return jsonify({"success": False, "message": "POD must be an image file."}), 400
+
+    try:
+        consignment = Consignment.query.get(consignment_id)
+        if not consignment:
+            return jsonify({"success": False, "message": "Consignment not found."}), 404
+
+        filename = secure_filename(upload.filename)
+        filename = f"{uuid.uuid4().hex}_{filename}"
+        file_bytes = upload.read()
+
+        # If Supabase configured, upload there and store a marker 'supabase:bucket/path'
+        supa = _get_supabase_client()
+        bucket = os.getenv('SUPABASE_BUCKET', 'pod-uploads')
+        if supa:
+            try:
+                object_path = f"{consignment_id}/{filename}"
+                # upload to supabase
+                supa.storage.from_(bucket).upload(object_path, _io.BytesIO(file_bytes), {'content-type': upload.mimetype or 'application/octet-stream'})
+                # store marker so we can remove later
+                consignment.pod_image = f"supabase:{bucket}/{object_path}"
+                db.session.commit()
+                return jsonify({"success": True, "pod_image": consignment.pod_image}), 200
+            except Exception:
+                db.session.rollback()
+                logger.exception("Supabase POD upload failed; falling back to local storage")
+
+        # fallback: local instance storage
+        try:
+            upload_folder = os.path.join(current_app.instance_path, "uploads")
+            os.makedirs(upload_folder, exist_ok=True)
+            dest_path = os.path.join(upload_folder, filename)
+            with open(dest_path, "wb") as file_handle:
+                file_handle.write(file_bytes)
+            consignment.pod_image = filename
+            db.session.commit()
+            return jsonify({"success": True, "pod_image": filename}), 200
+        except Exception:
+            db.session.rollback()
+            logger.exception("POD upload failed (local)")
+            return jsonify({"success": False, "message": "Upload failed."}), 500
+    except Exception:
+        db.session.rollback()
+        logger.exception("POD upload failed")
+        return jsonify({"success": False, "message": "Upload failed."}), 500
+
+
+@admin_bp.route("/admin/consignments/<int:consignment_id>/pod", methods=["DELETE"], endpoint="consignment_pod_delete")
+@require_admin
+def consignment_pod_delete(consignment_id):
+    """Delete POD association (and file if present)."""
+    try:
+        consignment = Consignment.query.get(consignment_id)
+        if not consignment or not getattr(consignment, "pod_image", None):
+            return jsonify({"success": False, "message": "No POD to delete."}), 404
+
+        # If stored in Supabase, remove via storage API
+        pod_val = consignment.pod_image
+        if isinstance(pod_val, str) and pod_val.startswith('supabase:'):
+            client = _get_supabase_client()
+            if client:
+                try:
+                    _, rest = pod_val.split(":", 1)
+                    bucket, object_path = rest.split("/", 1)
+                    client.storage.from_(bucket).remove([object_path])
+                except Exception:
+                    logger.exception("Failed to remove POD from Supabase")
+
+        else:
+            # local file
+            upload_folder = os.path.join(current_app.instance_path, "uploads")
+            pod_rel = consignment.pod_image
+            try:
+                pod_path = os.path.normpath(os.path.join(upload_folder, pod_rel))
+                if pod_path.startswith(os.path.abspath(upload_folder)) and os.path.exists(pod_path):
+                    try:
+                        os.remove(pod_path)
+                    except Exception:
+                        logger.exception("Failed to remove POD file from disk")
+            except Exception:
+                logger.exception("Error while attempting to remove local POD file")
+
+        consignment.pod_image = None
+        db.session.commit()
+        return jsonify({"success": True}), 200
+    except Exception:
+        db.session.rollback()
+        logger.exception("Failed deleting POD")
+        return jsonify({"success": False, "message": "Delete failed."}), 500

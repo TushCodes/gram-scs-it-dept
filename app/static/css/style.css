@@ -1,4 +1,4 @@
-/* 
+/*
 Index for style.css
 
 1.  CSS Variables (Root)
@@ -980,7 +980,7 @@ h2.text-bg-click a { color: var(--color-white); }
     padding-left: 40px;
 }
 
-/* Removed temporary Bootstrap-4 compatibility helpers (mr-*/.ml-*) — templates now use Bootstrap 5 utilities */
+/* Removed temporary Bootstrap-4 compatibility helpers (mr- and ml- classes) — templates now use Bootstrap 5 utilities */
 .form-w3ls h3.sec-title-w3 {
   display: block;
   font-size: 1.7rem;
