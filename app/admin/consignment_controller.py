@@ -365,44 +365,58 @@ def consignments_save():
 
         seen_numbers = set()
         validated_rows = []
+        errors = []
 
-        for row in rows:
+        for idx, row in enumerate(rows):
             row_id = row.get("id")
             try:
                 consignment_number = normalize_consignment_number(row.get("consignment_number"))
+            except ValueError as error:
+                errors.append({"index": idx, "field": "consignment_number", "message": str(error)})
+                consignment_number = None
+
+            try:
                 status = normalize_status(row.get("status"))
+            except ValueError as error:
+                errors.append({"index": idx, "field": "status", "message": str(error)})
+                status = None
+
+            try:
                 pickup_pincode = normalize_indian_pincode(row.get("pickup_pincode"), "pickup_pincode")
+            except ValueError as error:
+                errors.append({"index": idx, "field": "pickup_pincode", "message": str(error)})
+                pickup_pincode = None
+
+            try:
                 drop_pincode = normalize_indian_pincode(row.get("drop_pincode"), "drop_pincode")
             except ValueError as error:
-                return jsonify({"success": False, "message": str(error)}), 400
+                errors.append({"index": idx, "field": "drop_pincode", "message": str(error)})
+                drop_pincode = None
 
             eta = str(row.get("eta") or "").strip()
 
-            if consignment_number in seen_numbers:
-                return jsonify({
-                    "success": False,
-                    "message": f"Duplicate consignment number in sheet: {consignment_number}"
-                }), 400
-            seen_numbers.add(consignment_number)
+            if consignment_number:
+                if consignment_number in seen_numbers:
+                    errors.append({"index": idx, "field": "consignment_number", "message": f"Duplicate consignment number in sheet: {consignment_number}"})
+                seen_numbers.add(consignment_number)
 
             if row_id is not None:
                 try:
                     row_id = int(row_id)
                 except (TypeError, ValueError):
-                    return jsonify({"success": False, "message": f"Invalid row id: {row_id}"}), 400
+                    errors.append({"index": idx, "field": "id", "message": f"Invalid row id: {row_id}"})
+                    row_id = None
 
                 # Treat non-positive ids (client temporary ids like -1) as new rows
-                if row_id <= 0:
+                if row_id and row_id <= 0:
                     row_id = None
                 else:
-                    if row_id not in existing:
-                        return jsonify({"success": False, "message": f"Row id {row_id} not found."}), 400
+                    if row_id and row_id not in existing:
+                        errors.append({"index": idx, "field": "id", "message": f"Row id {row_id} not found."})
+                        row_id = None
 
-                    if row_id in validated_deleted_ids:
-                        return jsonify({
-                            "success": False,
-                            "message": f"Row id {row_id} cannot be updated and deleted in the same save."
-                        }), 400
+                    if row_id and row_id in validated_deleted_ids:
+                        errors.append({"index": idx, "field": "id", "message": f"Row id {row_id} cannot be updated and deleted in the same save."})
             else:
                 row_id = None
 
@@ -432,6 +446,11 @@ def consignments_save():
                 "pod_file_name": pod_file_name,
                 "pod_file_type": pod_file_type,
             })
+
+        # If any per-row validation errors were collected, return them instead of aborting.
+        if errors:
+            db.session.rollback()
+            return jsonify({"success": False, "errors": errors}), 400
 
         for deleted_id in validated_deleted_ids:
             db.session.delete(existing[deleted_id])

@@ -278,5 +278,8 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/admin/api.js') }}"></script>
+<script src="{{ url_for('static', filename='js/admin/state.js') }}"></script>
+<script src="{{ url_for('static', filename='js/admin/validation.js') }}"></script>
 <script src="{{ url_for('static', filename='js/consignments.js') }}"></script>
 {% endblock %}
