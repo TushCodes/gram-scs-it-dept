@@ -7,6 +7,11 @@
 {% block content %}
   <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
     <h4 class="mb-0 fw-bold">Customer Leads</h4>
+    <form action="{{ url_for('admin.reject_empty_phone_leads') }}" method="post" class="d-inline">
+      <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Delete all leads with an empty phone number?');">
+        Reject blank-phone leads
+      </button>
+    </form>
   </div>
 
   {% if error %}
@@ -39,7 +44,7 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="7" class="text-center py-4 text-secondary">No leads yet.</td>
+          <td colspan="7" class="text-center py-4 text-secondary">No leads yet. Leads with empty phone numbers are rejected from this list.</td>
         </tr>
         {% endfor %}
       </tbody>

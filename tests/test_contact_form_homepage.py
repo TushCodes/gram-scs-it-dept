@@ -57,6 +57,29 @@ class ContactFormHomepageTests(unittest.TestCase):
             db.session.delete(created)
             db.session.commit()
 
+    def test_contact_submission_rejects_blank_phone(self):
+        unique_email = f"lead-{uuid4().hex[:8]}@example.com"
+
+        response = self.client.post(
+            "/contact",
+            data={
+                "source": "homepage",
+                "name": "Test User",
+                "email": unique_email,
+                "phone": "   ",
+                "subject": "Homepage Contact",
+                "message": "Please contact me",
+            },
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.headers["Location"].endswith("/#contact"))
+
+        with self.app.app_context():
+            created = Lead.query.filter_by(email=unique_email).order_by(Lead.id.desc()).first()
+            self.assertIsNone(created)
+
     def test_admin_leads_page_loads(self):
         with self.client.session_transaction() as session_data:
             session_data[ADMIN_SESSION_KEY] = True
@@ -65,6 +88,31 @@ class ContactFormHomepageTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Customer Leads", response.data)
+
+    def test_admin_can_reject_blank_phone_leads(self):
+        with self.app.app_context():
+            lead = Lead(
+                name="Blank Phone Lead",
+                email="blank-phone@example.com",
+                phone="",
+                subject="Test",
+                message="Needs cleanup",
+            )
+            db.session.add(lead)
+            db.session.commit()
+            lead_id = lead.id
+
+        with self.client.session_transaction() as session_data:
+            session_data[ADMIN_SESSION_KEY] = True
+
+        response = self.client.post("/admin/leads/reject-empty-phone", follow_redirects=False)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.headers["Location"].endswith("/admin/leads"))
+
+        with self.app.app_context():
+            deleted = Lead.query.get(lead_id)
+            self.assertIsNone(deleted)
 
 
 if __name__ == "__main__":
