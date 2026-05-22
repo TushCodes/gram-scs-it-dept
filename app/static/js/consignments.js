@@ -24,20 +24,16 @@ document.addEventListener("DOMContentLoaded", function () {
 
     var saveUrl = tableBody.dataset.saveUrl || "";
     var listUrl = tableBody.dataset.listUrl || "";
-    var deletedIds = new Set();
     var currentEditingRow = null;
     var isCreatingRow = false;
     var searchTimeout;
     var currentPage = 1;
-    var currentPerPage = 10;
+    var currentPerPage = perPageSelect ? (parseInt(perPageSelect.value, 10) || 10) : 10;
     var currentSearch = "";
     var currentSortBy = "id";
     var currentSortOrder = "asc";
     var totalRows = 0;
     var totalPages = 1;
-    var locallyAddedRows = [];
-    var modifiedRowIds = new Set();
-    var newRowIdCounter = 0;
     var stagedPodUpload = null;
     var statusTimeoutId = null;
 
@@ -70,25 +66,6 @@ document.addEventListener("DOMContentLoaded", function () {
             .replaceAll(">", "&gt;")
             .replaceAll('"', "&quot;")
             .replaceAll("'", "&#39;");
-    }
-
-    function validatePincode(value) {
-        var raw = (value || "").trim();
-        if (raw === "") {
-            return true; // Allow empty
-        }
-        if (!/^[1-9][0-9]{5}$/.test(raw)) {
-            return false;
-        }
-        return true;
-    }
-
-    function normalizePincode(value) {
-        var raw = (value || "").trim();
-        if (raw === "") {
-            return "";
-        }
-        return raw;
     }
 
     function populateModal(row) {
@@ -241,13 +218,10 @@ document.addEventListener("DOMContentLoaded", function () {
             deleteButton.addEventListener("click", function () {
                 var existingId = tr.dataset.id ? Number(tr.dataset.id) : null;
                 if (existingId && existingId > 0) {
-                    deletedIds.add(existingId);
+                    adminState.addDeleted(existingId);
                 }
                 // Remove from local tracking
-                var idx = locallyAddedRows.findIndex(function (r) { return r.id === existingId; });
-                if (idx !== -1) {
-                    locallyAddedRows.splice(idx, 1);
-                }
+                adminState.removeLocalRowById(existingId);
                 tr.remove();
             });
         }
@@ -274,11 +248,11 @@ document.addEventListener("DOMContentLoaded", function () {
             return false;
         }
 
-        if (!validatePincode(pickupPincode)) {
+        if (!adminValidation.validatePincode(pickupPincode)) {
             showStatus("Pickup Pincode must be a valid 6-digit number or empty.", "danger");
             return false;
         }
-        if (!validatePincode(dropPincode)) {
+        if (!adminValidation.validatePincode(dropPincode)) {
             showStatus("Drop Pincode must be a valid 6-digit number or empty.", "danger");
             return false;
         }
@@ -286,11 +260,11 @@ document.addEventListener("DOMContentLoaded", function () {
         source.consignment_number = consignmentNumber;
         source.status = status;
         source.pickup_address = document.getElementById("modal-pickup-address").value.trim();
-        source.pickup_pincode = normalizePincode(pickupPincode);
+        source.pickup_pincode = adminValidation.normalizePincode(pickupPincode);
         source.pickup_tag = document.getElementById("modal-pickup-tag").value.trim();
         source.pickup_date = document.getElementById("modal-pickup-date").value.trim();
         source.drop_address = document.getElementById("modal-drop-address").value.trim();
-        source.drop_pincode = normalizePincode(dropPincode);
+        source.drop_pincode = adminValidation.normalizePincode(dropPincode);
         source.drop_tag = document.getElementById("modal-drop-tag").value.trim();
         source.drop_date = document.getElementById("modal-drop-date").value.trim();
         source.pod_file_name = stagedPodUpload ? stagedPodUpload.name : (source.pod_file_name || null);
@@ -328,7 +302,7 @@ document.addEventListener("DOMContentLoaded", function () {
             // Track modification
             var rowId = tr.dataset.id ? Number(tr.dataset.id) : null;
             if (rowId && rowId > 0) {
-                modifiedRowIds.add(rowId);
+                adminState.addModified(rowId);
             }
         }
 
@@ -356,7 +330,15 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         var rawRows = collectRows();
-        if (!rawRows.length && deletedIds.size === 0) {
+        // Include staged local rows that may not be present in DOM (user hasn't navigated to last page)
+        try {
+            var staged = (adminState && adminState.locallyAddedRows) ? adminState.locallyAddedRows : [];
+            staged.forEach(function (s) {
+                var exists = rawRows.some(function (r) { return r.id === s.id; });
+                if (!exists) rawRows.push(s);
+            });
+        } catch (e) {}
+        if (!rawRows.length && adminState.deletedIds.size === 0) {
             showStatus("No changes to save.", "warning");
             return;
         }
@@ -367,40 +349,54 @@ document.addEventListener("DOMContentLoaded", function () {
             saveButton.textContent = "Saving...";
             showStatus('<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Saving rows to database...', "info");
 
-            // Use AbortController to avoid hanging indefinitely
-            var ac = new AbortController();
-            var timeoutId = setTimeout(function () { ac.abort(); }, 15000);
-            var response = await fetch(saveUrl, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    rows: rawRows,
-                    deleted_ids: Array.from(deletedIds)
-                }),
-                signal: ac.signal
+            // Delegate network call to adminAPI
+            var data = await adminAPI.saveRows(saveUrl, {
+                rows: rawRows,
+                deleted_ids: Array.from(adminState.deletedIds)
             });
-            clearTimeout(timeoutId);
 
-            if (response.status === 401) {
-                throw new Error("Your session has expired. Please refresh the page and log in again.");
+            // Handle structured per-row validation errors from the server
+            if (data && Array.isArray(data.errors) && data.errors.length) {
+                // Clear any previous row error markers
+                document.querySelectorAll('#sheet-body tr .row-error').forEach(function (el) { el.remove(); });
+                var trs = Array.from(document.querySelectorAll('#sheet-body tr'));
+                var firstTr = null;
+                data.errors.forEach(function (err) {
+                    var idx = err.index || 0;
+                    var msg = err.message || 'Invalid value';
+                    var tr = trs[idx];
+                    if (!tr) return;
+                    firstTr = firstTr || tr;
+                    tr.classList.add('table-danger');
+                    // insert or update an inline error element
+                    var existing = tr.querySelector('.row-error');
+                    if (existing) {
+                        existing.textContent = msg;
+                    } else {
+                        var td = document.createElement('td');
+                        td.colSpan = tr.cells.length;
+                        td.className = 'row-error text-danger small';
+                        td.textContent = msg;
+                        var erTr = document.createElement('tr');
+                        erTr.className = 'row-error-row';
+                        erTr.appendChild(td);
+                        tr.parentNode.insertBefore(erTr, tr.nextSibling);
+                    }
+                });
+
+                if (firstTr) {
+                    firstTr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+
+                throw new Error('Validation errors. Please fix highlighted rows.');
             }
 
-            var data;
-            try {
-                data = await response.json();
-            } catch (parseError) {
-                throw new Error("Invalid response from server. Please check your connection and try again.");
-            }
-
-            if (!response.ok || !data.success) {
-                throw new Error(data.message || "Save failed.");
+            if (!data || !data.success) {
+                throw new Error((data && data.message) || "Save failed.");
             }
 
             showStatus("<strong>Saved successfully.</strong> Your internal database has been updated.", "success");
-            deletedIds.clear();
-            modifiedRowIds.clear();
-            locallyAddedRows = [];
-            newRowIdCounter = 0;
+            adminState.resetAfterSave();
             setTimeout(function () {
                 // Prefer server-provided total (after commit) to compute the
                 // page that will contain newly inserted rows. Fall back to
@@ -408,7 +404,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 try {
                     var totalAfter = (data && typeof data.total === 'number')
                         ? data.total
-                        : (totalRows + (locallyAddedRows ? locallyAddedRows.length : 0) - (data.deleted_count || 0));
+                        : (totalRows + (adminState.locallyAddedRows ? adminState.locallyAddedRows.length : 0) - (data.deleted_count || 0));
                     var lastPage = Math.max(1, Math.ceil(totalAfter / currentPerPage));
                     loadPage(lastPage, currentSearch, currentPerPage, currentSortBy, currentSortOrder);
                 } catch (e) {
@@ -430,25 +426,26 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         try {
-            var params = new URLSearchParams({
+            var params = {
                 page: page,
                 per_page: perPage,
                 search: search,
                 sort_by: sortBy,
                 sort_order: sortOrder
-            });
+            };
 
             showLoadingSpinner(true);
 
-            // Abort fetch if it takes too long to respond
-            var ac = new AbortController();
-            var timeoutId = setTimeout(function () { ac.abort(); }, 15000);
-            var response = await fetch(listUrl + "?" + params.toString(), { signal: ac.signal });
-            clearTimeout(timeoutId);
-            var data = await response.json();
+            // clear any inline validation rows before loading new data
+            try {
+                document.querySelectorAll('#sheet-body .row-error').forEach(function (el) { el.remove(); });
+                document.querySelectorAll('.row-error-row').forEach(function (el) { el.remove(); });
+                document.querySelectorAll('#sheet-body tr.table-danger').forEach(function (tr) { tr.classList.remove('table-danger'); });
+            } catch (e) {}
 
-            if (!response.ok || !data.success) {
-                throw new Error(data.error || "Failed to load data.");
+            var data = await adminAPI.fetchList(listUrl, params);
+            if (!data || !data.success) {
+                throw new Error((data && data.error) || "Failed to load data.");
             }
 
             // Clear existing rows
@@ -459,14 +456,30 @@ document.addEventListener("DOMContentLoaded", function () {
                 addRow(row, false);
             });
 
-            // Update pagination info
-            totalRows = data.total;
-            totalPages = data.pages;
+            // Include locally staged rows in totals (but only render them when showing the last page)
+            var stagedCount = (adminState && adminState.locallyAddedRows) ? adminState.locallyAddedRows.length : 0;
+
+            // Update pagination info: totalRows includes staged rows
+            totalRows = (typeof data.total === "number" ? data.total : 0) + stagedCount;
+            totalPages = Math.max(1, Math.ceil(totalRows / perPage));
             currentPage = page;
             currentPerPage = perPage;
             currentSearch = search;
             currentSortBy = sortBy;
             currentSortOrder = sortOrder;
+
+            // If this is the last page (after accounting for staged rows), append staged rows to the DOM.
+            // Render staged rows without the local highlight (pass isLocal = false).
+            if (stagedCount > 0 && page === totalPages) {
+                try {
+                    adminState.locallyAddedRows.forEach(function (row) {
+                        // show staged rows on last page but without 'table-info' highlight
+                        addRow(row, false);
+                    });
+                } catch (e) {
+                    // ignore DOM append errors
+                }
+            }
 
             updatePaginationUI();
             updateSortHeaders();
@@ -577,11 +590,24 @@ document.addEventListener("DOMContentLoaded", function () {
     // Event Listeners
     modalSaveBtn.addEventListener("click", function () {
         if (isCreatingRow) {
-            var newId = -(++newRowIdCounter);
+            var newId = adminState.nextLocalId();
             var newSource = buildRowData({}, newId);
             if (updateRowFromModal(null, newSource)) {
-                locallyAddedRows.push(newSource);
-                addRow(newSource, true);
+                // Stage row in admin state but do not add to DOM yet
+                adminState.pushLocalRow(newSource);
+
+                // Clear any staged POD upload buffer from the modal
+                stagedPodUpload = null;
+                try { if (modalPodFile) modalPodFile.value = ""; } catch (e) {}
+
+                // Update totals and pagination UI, but do not navigate or re-load pages
+                totalRows = (typeof totalRows === "number" ? totalRows : 0) + 1;
+                totalPages = Math.max(1, Math.ceil(totalRows / currentPerPage));
+                updatePaginationUI();
+
+                showStatus("Row staged locally. Click 'Save All' to persist changes.", "info");
+
+                // Close modal and reset local editing state
                 editModal.hide();
                 currentEditingRow = null;
                 isCreatingRow = false;
@@ -680,24 +706,8 @@ document.addEventListener("DOMContentLoaded", function () {
             if (!confirm('Remove POD for this consignment? This will delete the file.')) return;
 
             try {
-                var resp = await fetch('/admin/consignments/' + rowId + '/pod', {
-                    method: 'DELETE',
-                    credentials: 'same-origin',
-                    headers: { 'Accept': 'application/json' },
-                });
-
-                if (resp.status === 401) {
-                    throw new Error('Authentication required. Please refresh and log in again.');
-                }
-
-                var data;
-                try {
-                    data = await resp.json();
-                } catch (e) {
-                    throw new Error('Unexpected server response.');
-                }
-
-                if (!resp.ok || !data.success) throw new Error(data.message || 'Delete failed');
+                var data = await adminAPI.deletePod(rowId);
+                if (!data || !data.success) throw new Error((data && data.message) || 'Delete failed');
 
                 // Update UI
                 try {
@@ -803,10 +813,14 @@ document.addEventListener("DOMContentLoaded", function () {
                 var existingRows = JSON.parse(existingJson || "[]") || [];
                 if (existingRows.length) {
                     tableBody.innerHTML = "";
-                    existingRows.forEach(function (row) { addRow(row, false); });
+                    // Respect rows-per-page on initial render: only render the first page
+                    var displayRows = existingRows.slice(0, currentPerPage);
+                    displayRows.forEach(function (row) { addRow(row, false); });
                     totalRows = existingRows.length;
                     totalPages = Math.max(1, Math.ceil(totalRows / currentPerPage));
                     currentPage = 1;
+                    // Ensure the per-page select reflects the active value
+                    try { if (perPageSelect) perPageSelect.value = String(currentPerPage); } catch (e) {}
                     updatePaginationUI();
                     updateSortHeaders();
                     return;
