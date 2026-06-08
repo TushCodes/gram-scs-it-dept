@@ -138,3 +138,124 @@ def test_staged_pod_upload_saves_with_row(tmp_path):
         assert os.path.exists(pod_path)
         with open(pod_path, 'rb') as file_handle:
             assert file_handle.read() == pod_bytes
+
+
+class FakeSupabaseBucket:
+    def __init__(self, store, bucket_name):
+        self.store = store
+        self.bucket_name = bucket_name
+
+    def upload(self, object_path, file_obj, options=None):
+        self.store[(self.bucket_name, object_path)] = file_obj.read()
+        return {"path": object_path}
+
+    def download(self, object_path):
+        return self.store[(self.bucket_name, object_path)]
+
+    def remove(self, object_paths):
+        for object_path in object_paths:
+            self.store.pop((self.bucket_name, object_path), None)
+        return []
+
+
+class FakeSupabaseStorage:
+    def __init__(self, store):
+        self.store = store
+
+    def from_(self, bucket_name):
+        return FakeSupabaseBucket(self.store, bucket_name)
+
+
+class FakeSupabaseClient:
+    def __init__(self):
+        self.store = {}
+        self.storage = FakeSupabaseStorage(self.store)
+
+
+def test_supabase_pod_upload_serves_permanent_app_endpoint_without_signed_url(tmp_path, monkeypatch):
+    setup_env_for_app(tmp_path)
+
+    from app import create_app
+    from app.models import db, Consignment
+    import app.admin.consignment_controller as controller
+
+    fake_supabase = FakeSupabaseClient()
+    monkeypatch.setattr(controller, '_get_supabase_client', lambda: fake_supabase)
+    monkeypatch.setenv('SUPABASE_BUCKET', 'pod-uploads')
+
+    app = create_app()
+    app.instance_path = str(tmp_path / 'instance')
+    os.makedirs(app.instance_path, exist_ok=True)
+
+    client = app.test_client()
+
+    with app.app_context():
+        try:
+            db.drop_all()
+        except Exception:
+            pass
+        db.create_all()
+        c = Consignment(consignment_number='SUPACN1', status='In Transit')
+        db.session.add(c)
+        db.session.commit()
+        cid = c.id
+
+    from app.admin.auth import ADMIN_SESSION_KEY
+    with client.session_transaction() as sess:
+        sess[ADMIN_SESSION_KEY] = True
+
+    resp = client.post(
+        f'/admin/consignments/{cid}/pod',
+        data={'file': (BytesIO(b'supabase-pod-bytes'), 'pod.jpg')},
+        content_type='multipart/form-data',
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body and body.get('success') is True
+    assert body['pod_image'].startswith('supabase:pod-uploads/')
+
+    with app.app_context():
+        row = Consignment.query.get(cid)
+        assert row.pod_image == body['pod_image']
+
+    get_resp = client.get(f'/admin/consignments/{cid}/pod')
+    assert get_resp.status_code == 200
+    assert get_resp.data == b'supabase-pod-bytes'
+    assert get_resp.location is None
+
+
+def test_track_pod_streams_supabase_file_without_signed_url(tmp_path, monkeypatch):
+    setup_env_for_app(tmp_path)
+
+    from app import create_app
+    from app.models import db, Consignment
+    import app.admin.consignment_controller as controller
+
+    fake_supabase = FakeSupabaseClient()
+    fake_supabase.store[('pod-uploads', '42/pod.jpg')] = b'track-supabase-pod-bytes'
+    monkeypatch.setattr(controller, '_get_supabase_client', lambda: fake_supabase)
+
+    app = create_app()
+    app.instance_path = str(tmp_path / 'instance')
+    os.makedirs(app.instance_path, exist_ok=True)
+
+    client = app.test_client()
+
+    with app.app_context():
+        try:
+            db.drop_all()
+        except Exception:
+            pass
+        db.create_all()
+        db.session.add(Consignment(
+            consignment_number='TRKCN1',
+            status='Delivered',
+            pod_image='supabase:pod-uploads/42/pod.jpg',
+        ))
+        db.session.commit()
+
+    get_resp = client.get('/track/pod/TRKCN1')
+    assert get_resp.status_code == 200
+    assert get_resp.data == b'track-supabase-pod-bytes'
+    assert get_resp.location is None
+    assert 'attachment' in get_resp.headers.get('Content-Disposition', '')
