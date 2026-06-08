@@ -1,8 +1,6 @@
 import logging
 import threading
 
-import psycopg2
-
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +27,8 @@ def ensure_consignment_columns(dsn, log=None):
         raise ValueError("A PostgreSQL DSN is required to ensure consignment columns.")
 
     active_logger = log or logger
+
+    import psycopg2
 
     conn = psycopg2.connect(dsn)
     try:
