@@ -131,6 +131,7 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from sqlalchemy.exc import DatabaseError, IntegrityError, OperationalError, ProgrammingError
+from sqlalchemy import inspect as sa_inspect
 
 from app import limiter
 from app.admin import admin_bp
@@ -375,7 +376,19 @@ def consignments_save():
                 r.get("consignment_number"),
             )
 
-        existing = {c.id: c for c in Consignment.query.all()}
+        # Avoid selecting all mapped columns (which fails if the DB schema is missing new columns).
+        # Fetch only ids first so we can detect missing-column errors early and provide a clear message.
+        try:
+            existing_ids = [r[0] for r in db.session.query(Consignment.id).all()]
+            existing = {int(i): None for i in existing_ids}
+        except (ProgrammingError, OperationalError, DatabaseError) as e:
+            db.session.rollback()
+            if _is_missing_column_error(e):
+                logger.exception("Schema mismatch in admin save")
+                return jsonify({"success": False, "message": "Database schema needs an update. Missing consignment fields."}), 500
+
+            logger.exception("Database error in admin save")
+            return jsonify({"success": False, "message": "Database connection error. Please try again."}), 500
         validated_deleted_ids = set()
 
         for raw_deleted_id in deleted_ids:
@@ -482,12 +495,36 @@ def consignments_save():
             db.session.rollback()
             return jsonify({"success": False, "errors": errors}), 400
 
+        # Detect missing DB columns proactively to avoid failing mid-commit with unclear errors.
+        try:
+            inspector = sa_inspect(db.engine)
+            db_columns = {c['name'] for c in inspector.get_columns('consignment')}
+            model_columns = {col.name for col in Consignment.__table__.columns}
+            missing_cols = model_columns.difference(db_columns)
+            if missing_cols:
+                logger.exception("Schema mismatch detected while saving: missing columns %s", missing_cols)
+                db.session.rollback()
+                return jsonify({"success": False, "message": "Database schema needs an update. Missing consignment fields."}), 500
+        except Exception:
+            # If inspection fails for any reason, continue and let DB operations surface errors.
+            logger.exception("Failed to inspect consignment table columns")
+
         for deleted_id in validated_deleted_ids:
             db.session.delete(existing[deleted_id])
 
         for row in validated_rows:
             if row["id"]:
-                consignment = existing[row["id"]]
+                # Load the specific Consignment instance on demand. This avoids a full-table
+                # select which may fail when the DB schema differs from model mappings.
+                try:
+                    consignment = db.session.get(Consignment, int(row["id"]))
+                except Exception:
+                    consignment = None
+
+                if consignment is None:
+                    # This should generally not happen (validated earlier), but handle gracefully.
+                    consignment = Consignment()
+                    db.session.add(consignment)
             else:
                 consignment = Consignment()
                 db.session.add(consignment)

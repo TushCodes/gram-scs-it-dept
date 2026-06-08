@@ -64,7 +64,8 @@
     return _fetchJson(saveUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      timeout: 60000
     }).catch(function (err) {
       return { success: false, status: err.status || 500, message: err.message || 'Request failed', body: err.body || null };
     });
