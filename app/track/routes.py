@@ -129,7 +129,27 @@ def consignment_pod(consignment_number):
             return jsonify({"success": False, "message": "Invalid POD path."}), 400
 
         if not os.path.exists(safe_path):
-            return jsonify({"success": False, "message": "POD file missing."}), 404
+            try:
+                from app.admin.consignment_controller import _download_legacy_supabase_pod_file
+
+                content_bytes, bucket, object_path = _download_legacy_supabase_pod_file(
+                    getattr(consignment, "id", None),
+                    pod_path,
+                )
+                consignment.pod_image = f"supabase:{bucket}/{object_path}"
+                db.session.commit()
+                mimetype, _ = mimetypes.guess_type(object_path)
+                filename = os.path.basename(object_path) or f"{number}_pod.jpg"
+                return send_file(
+                    io.BytesIO(content_bytes),
+                    as_attachment=True,
+                    download_name=filename,
+                    mimetype=mimetype or "application/octet-stream",
+                )
+            except Exception:
+                db.session.rollback()
+                logger.exception('Legacy local POD was not found locally or in Supabase')
+                return jsonify({"success": False, "message": "POD file missing."}), 404
 
         # serve as attachment so browsers download; convert to JPEG for consistent .jpg
         try:

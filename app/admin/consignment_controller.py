@@ -851,7 +851,16 @@ def consignment_pod_file(consignment_id):
             return jsonify({"success": False, "message": "Invalid POD path."}), 400
 
         if not os.path.exists(safe_path):
-            return jsonify({"success": False, "message": "POD file missing."}), 404
+            try:
+                content, bucket, object_path = _download_legacy_supabase_pod_file(consignment.id, pod_path)
+                consignment.pod_image = f"supabase:{bucket}/{object_path}"
+                db.session.commit()
+                mimetype, _ = mimetypes.guess_type(object_path)
+                return send_file(io.BytesIO(content), mimetype=mimetype or "application/octet-stream")
+            except Exception:
+                db.session.rollback()
+                logger.exception("Legacy local POD was not found locally or in Supabase")
+                return jsonify({"success": False, "message": "POD file missing."}), 404
 
         return send_file(safe_path)
     except Exception:
@@ -878,6 +887,8 @@ def consignment_pod_upload(consignment_id):
         filename = secure_filename(upload.filename)
         filename = f"{uuid.uuid4().hex}_{filename}"
         file_bytes = upload.read()
+        if len(file_bytes) > MAX_POD_IMAGE_BYTES:
+            return jsonify({"success": False, "message": "POD image must be smaller than 5 MB."}), 400
 
         # If Supabase configured, upload there and store a marker 'supabase:bucket/path'
         supa = _get_supabase_client()
