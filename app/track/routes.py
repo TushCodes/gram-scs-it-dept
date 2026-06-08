@@ -139,6 +139,7 @@ def consignment_pod(consignment_number):
         if not safe_path.startswith(os.path.abspath(upload_folder)):
             return jsonify({"success": False, "message": "Invalid POD path."}), 400
 
+        logger.info(f"POD PATH: {safe_path}")
         if not os.path.exists(safe_path):
             return jsonify({"success": False, "message": "POD file missing."}), 404
 

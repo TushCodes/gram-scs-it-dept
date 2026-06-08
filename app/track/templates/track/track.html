@@ -291,10 +291,10 @@ document.addEventListener('DOMContentLoaded', function(){
             a.click();
             a.remove();
             URL.revokeObjectURL(a.href);
-        }catch(e){
+        } catch(e) {
             console.error(e);
             alert('Error downloading POD');
-        }finally{
+        } finally{
             btn.disabled = false;
             btn.innerText = original;
         }
