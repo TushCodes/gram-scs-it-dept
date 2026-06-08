@@ -62,7 +62,8 @@ This application is PostgreSQL-only and is intended to use Supabase in productio
 1. Deploy with Blueprint.
 2. Paste the Supabase pooler URL from [.env.render.example](.env.render.example) into `DATABASE_URL` in Render.
 3. Set `ADMIN_PASSWORD_HASH` to a unique production hash and keep it out of the repository.
-4. Keep `AUTO_CREATE_TABLES=false` so production never mutates schema on boot.
+4. Set `DATABASE_URL` to your Supabase pooler URL in the Render service environment variables.
+5. Keep `AUTO_CREATE_TABLES=false` so production never mutates schema on boot.
 5. Before sending production traffic to the app, run the schema migration once against the Supabase database:
 
 ```bash
