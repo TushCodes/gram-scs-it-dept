@@ -100,6 +100,65 @@ def _download_supabase_pod_file(pod_value):
     return content, object_path
 
 
+def _download_legacy_supabase_pod_file(consignment_id, pod_value):
+    """Download a legacy POD by attempting old Supabase object paths.
+
+    Legacy records may store a bare object path or a local filename that was
+    previously migrated into Supabase. This helper tries the configured bucket
+    and an optional consignment-id-prefixed path.
+    """
+    client = _get_supabase_client()
+    if not client:
+        raise RuntimeError('Supabase not configured.')
+
+    bucket = os.getenv('SUPABASE_BUCKET', 'pod-uploads')
+    if not isinstance(pod_value, str) or not pod_value:
+        raise ValueError('Invalid legacy POD path.')
+
+    candidates = []
+    legacy_bucket = bucket
+    if pod_value.startswith('supabase:'):
+        _, rest = pod_value.split(':', 1)
+        try:
+            legacy_bucket, legacy_object_path = rest.split('/', 1)
+        except ValueError:
+            legacy_bucket = bucket
+            legacy_object_path = rest
+        candidates.append((legacy_bucket, legacy_object_path))
+    else:
+        candidates.append((bucket, pod_value))
+        if consignment_id is not None:
+            consignment_prefix = str(consignment_id)
+            if not pod_value.startswith(consignment_prefix + '/'):
+                candidates.append((bucket, f"{consignment_prefix}/{pod_value}"))
+
+    last_error = None
+    for candidate_bucket, object_path in candidates:
+        try:
+            content = client.storage.from_(candidate_bucket).download(object_path)
+            if hasattr(content, 'read'):
+                content = content.read()
+            if isinstance(content, bytearray):
+                content = bytes(content)
+            if not isinstance(content, bytes):
+                raise RuntimeError('Unexpected Supabase download response.')
+            return content, candidate_bucket, object_path
+        except Exception as exc:
+            last_error = exc
+
+    # Last chance: if the value was a local filename under uploads, try that path.
+    upload_folder = os.path.join(current_app.instance_path, 'uploads')
+    try:
+        legacy_path = os.path.normpath(os.path.join(upload_folder, pod_value))
+        if legacy_path.startswith(os.path.abspath(upload_folder)) and os.path.exists(legacy_path):
+            with open(legacy_path, 'rb') as fh:
+                return fh.read(), bucket, pod_value
+    except Exception:
+        pass
+
+    raise RuntimeError('Legacy POD file not found.') from last_error
+
+
 def _delete_pod_file(pod_value):
     if not pod_value:
         return
