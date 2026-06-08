@@ -6,6 +6,7 @@ import os
 import uuid
 import base64
 import binascii
+import tempfile
 from flask import current_app
 from werkzeug.utils import secure_filename
 import io as _io
@@ -56,11 +57,25 @@ def _store_pod_bytes(filename, file_bytes, content_type=None, bucket_name=None):
     if supa:
         bucket = bucket_name or os.getenv('SUPABASE_BUCKET', 'pod-uploads')
         object_path = f"consignments/{filename}"
-        supa.storage.from_(bucket).upload(
-            object_path,
-            _io.BytesIO(file_bytes),
-            {'content-type': content_type or 'application/octet-stream'},
-        )
+        # storage3 client expects a file path; write bytes to a temporary file
+        tmp = None
+        try:
+            tf = tempfile.NamedTemporaryFile(delete=False)
+            tmp = tf.name
+            tf.write(file_bytes)
+            tf.flush()
+            tf.close()
+            supa.storage.from_(bucket).upload(
+                object_path,
+                tmp,
+                {'content-type': content_type or 'application/octet-stream'},
+            )
+        finally:
+            try:
+                if tmp and os.path.exists(tmp):
+                    os.remove(tmp)
+            except Exception:
+                logger.exception('Failed to remove temporary POD upload file')
         return f"supabase:{bucket}/{object_path}"
 
     upload_folder = os.path.join(current_app.instance_path, "uploads")
@@ -992,8 +1007,22 @@ def consignment_pod_upload(consignment_id):
         if supa:
             try:
                 object_path = f"{consignment_id}/{filename}"
-                # upload to supabase
-                supa.storage.from_(bucket).upload(object_path, _io.BytesIO(file_bytes), {'content-type': upload.mimetype or 'application/octet-stream'})
+                # upload to supabase; storage client expects a file path, so write temp file
+                tmp = None
+                try:
+                    tf = tempfile.NamedTemporaryFile(delete=False)
+                    tmp = tf.name
+                    tf.write(file_bytes)
+                    tf.flush()
+                    tf.close()
+                    supa.storage.from_(bucket).upload(object_path, tmp, {'content-type': upload.mimetype or 'application/octet-stream'})
+                finally:
+                    try:
+                        if tmp and os.path.exists(tmp):
+                            os.remove(tmp)
+                    except Exception:
+                        logger.exception('Failed to remove temporary POD upload file')
+
                 # store marker so we can remove later
                 consignment.pod_image = f"supabase:{bucket}/{object_path}"
                 db.session.commit()
