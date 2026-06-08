@@ -410,7 +410,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 } catch (e) {
                     loadPage(1, currentSearch, currentPerPage, currentSortBy, currentSortOrder);
                 }
-            }, 1200);
+            }, 500);
         } catch (error) {
             showStatus("<strong>Save failed.</strong> " + escapeHtml(error.message || "Please check the row values and try again."), "danger");
         } finally {
@@ -593,17 +593,25 @@ document.addEventListener("DOMContentLoaded", function () {
             var newId = adminState.nextLocalId();
             var newSource = buildRowData({}, newId);
             if (updateRowFromModal(null, newSource)) {
-                // Stage row in admin state but do not add to DOM yet
+                // Stage row in admin state and show it immediately if possible.
                 adminState.pushLocalRow(newSource);
 
                 // Clear any staged POD upload buffer from the modal
                 stagedPodUpload = null;
                 try { if (modalPodFile) modalPodFile.value = ""; } catch (e) {}
 
-                // Update totals and pagination UI, but do not navigate or re-load pages
+                // Update totals and pagination UI
                 totalRows = (typeof totalRows === "number" ? totalRows : 0) + 1;
                 totalPages = Math.max(1, Math.ceil(totalRows / currentPerPage));
                 updatePaginationUI();
+
+                // If the new row belongs on the current page, render it immediately.
+                if (currentPage === totalPages) {
+                    addRow(newSource, true);
+                } else {
+                    // Otherwise navigate to the page that will contain the new staged row.
+                    loadPage(totalPages, currentSearch, currentPerPage, currentSortBy, currentSortOrder);
+                }
 
                 showStatus("Row staged locally. Click 'Save All' to persist changes.", "info");
 
