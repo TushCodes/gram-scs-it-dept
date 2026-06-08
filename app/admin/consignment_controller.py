@@ -1,5 +1,6 @@
 import io
 import logging
+import mimetypes
 import re
 import os
 import uuid
@@ -68,6 +69,35 @@ def _store_pod_bytes(filename, file_bytes, content_type=None, bucket_name=None):
     with open(dest_path, "wb") as file_handle:
         file_handle.write(file_bytes)
     return filename
+
+
+def _parse_supabase_pod_value(pod_value):
+    if not isinstance(pod_value, str) or not pod_value.startswith('supabase:'):
+        raise ValueError('POD is not stored in Supabase.')
+
+    _, rest = pod_value.split(':', 1)
+    bucket, object_path = rest.split('/', 1)
+    if not bucket or not object_path:
+        raise ValueError('Invalid Supabase POD path.')
+
+    return bucket, object_path
+
+
+def _download_supabase_pod_file(pod_value):
+    client = _get_supabase_client()
+    if not client:
+        raise RuntimeError('Supabase not configured.')
+
+    bucket, object_path = _parse_supabase_pod_value(pod_value)
+    content = client.storage.from_(bucket).download(object_path)
+    if hasattr(content, 'read'):
+        content = content.read()
+    if isinstance(content, bytearray):
+        content = bytes(content)
+    if not isinstance(content, bytes):
+        raise RuntimeError('Unexpected Supabase download response.')
+
+    return content, object_path
 
 
 def _delete_pod_file(pod_value):
@@ -799,37 +829,19 @@ def consignment_pod_file(consignment_id):
         if pod_path.startswith("http://") or pod_path.startswith("https://"):
             return redirect(pod_path)
 
-        # Supabase-stored value: "supabase:bucket/path"
+        # Supabase-stored value: "supabase:bucket/path". Keep the app route as the
+        # stable POD URL and stream bytes directly instead of redirecting to a
+        # temporary storage URL.
         if isinstance(pod_path, str) and pod_path.startswith("supabase:"):
-            client = _get_supabase_client()
-            if not client:
-                return jsonify({"success": False, "message": "Supabase not configured."}), 500
             try:
-                # parse
-                _, rest = pod_path.split(":", 1)
-                bucket, object_path = rest.split("/", 1)
-                # Attempt to create a signed URL (30s) then redirect
-                try:
-                    signed = client.storage.from_(bucket).create_signed_url(object_path, 30)
-                    # supabase client may return dict with 'signedURL' or 'signed_url'
-                    url = None
-                    if isinstance(signed, dict):
-                        url = signed.get('signedURL') or signed.get('signed_url') or signed.get('signedUrl')
-                    if not url:
-                        # fallback to public URL
-                        pub = client.storage.from_(bucket).get_public_url(object_path)
-                        url = pub.get('publicURL') or pub.get('publicUrl') or pub.get('publicURL')
-                    if url:
-                        return redirect(url)
-                except Exception:
-                    # fallback to public url
-                    pub = client.storage.from_(bucket).get_public_url(object_path)
-                    url = pub.get('publicURL') or pub.get('publicUrl') or pub.get('publicURL')
-                    if url:
-                        return redirect(url)
-                return jsonify({"success": False, "message": "Unable to generate POD URL."}), 500
+                content, object_path = _download_supabase_pod_file(pod_path)
+                mimetype, _ = mimetypes.guess_type(object_path)
+                return send_file(io.BytesIO(content), mimetype=mimetype or "application/octet-stream")
+            except RuntimeError as error:
+                logger.exception("Error downloading Supabase POD file")
+                return jsonify({"success": False, "message": str(error)}), 500
             except Exception:
-                logger.exception("Error generating Supabase POD URL")
+                logger.exception("Error serving Supabase POD file")
                 return jsonify({"success": False, "message": "Failed to serve POD."}), 500
 
         # Otherwise treat as local filename under instance/uploads
@@ -839,7 +851,16 @@ def consignment_pod_file(consignment_id):
             return jsonify({"success": False, "message": "Invalid POD path."}), 400
 
         if not os.path.exists(safe_path):
-            return jsonify({"success": False, "message": "POD file missing."}), 404
+            try:
+                content, bucket, object_path = _download_legacy_supabase_pod_file(consignment.id, pod_path)
+                consignment.pod_image = f"supabase:{bucket}/{object_path}"
+                db.session.commit()
+                mimetype, _ = mimetypes.guess_type(object_path)
+                return send_file(io.BytesIO(content), mimetype=mimetype or "application/octet-stream")
+            except Exception:
+                db.session.rollback()
+                logger.exception("Legacy local POD was not found locally or in Supabase")
+                return jsonify({"success": False, "message": "POD file missing."}), 404
 
         return send_file(safe_path)
     except Exception:
@@ -866,6 +887,8 @@ def consignment_pod_upload(consignment_id):
         filename = secure_filename(upload.filename)
         filename = f"{uuid.uuid4().hex}_{filename}"
         file_bytes = upload.read()
+        if len(file_bytes) > MAX_POD_IMAGE_BYTES:
+            return jsonify({"success": False, "message": "POD image must be smaller than 5 MB."}), 400
 
         # If Supabase configured, upload there and store a marker 'supabase:bucket/path'
         supa = _get_supabase_client()

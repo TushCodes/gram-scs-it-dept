@@ -243,6 +243,43 @@ def _seed_development_consignment_data():
         logger.exception('Failed to seed development consignments: %s', e)
 
 
+def _build_content_security_policy():
+    return (
+        "default-src 'self'; "
+        "base-uri 'self'; "
+        "object-src 'none'; "
+        "frame-ancestors 'self'; "
+        "form-action 'self'; "
+        "img-src 'self' data: https:; "
+        "font-src 'self' data: https://fonts.gstatic.com; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; "
+        "connect-src 'self'; "
+        "frame-src 'self' https://www.google.com https://maps.google.com;"
+    )
+
+
+def _apply_security_headers(app):
+    @app.after_request
+    def add_security_headers(response):
+        response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        response.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
+        response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+        response.headers.setdefault(
+            'Permissions-Policy',
+            'camera=(), microphone=(), geolocation=(), payment=(), usb=()'
+        )
+        response.headers.setdefault('Content-Security-Policy', _build_content_security_policy())
+
+        if request.is_secure or request.headers.get('X-Forwarded-Proto', '').lower() == 'https':
+            response.headers.setdefault(
+                'Strict-Transport-Security',
+                'max-age=31536000; includeSubDomains'
+            )
+
+        return response
+
+
 def create_app():
     app = Flask(__name__)
     # Log effective PORT so platform startup probes can be debugged in deployment logs.
@@ -256,6 +293,13 @@ def create_app():
     db_uri = _require_database_uri()
     app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = os.getenv('SESSION_COOKIE_SAMESITE', 'Lax')
+    app.config['SESSION_COOKIE_SECURE'] = _env_bool(
+        'SESSION_COOKIE_SECURE',
+        default=os.getenv('FLASK_ENV', '').strip().lower() == 'production'
+    )
+    app.config['PREFERRED_URL_SCHEME'] = 'https' if os.getenv('FLASK_ENV', '').strip().lower() == 'production' else 'http'
 
     if db_uri.startswith('sqlite://'):
         app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
@@ -311,6 +355,7 @@ def create_app():
     app.register_blueprint(track_bp)
     app.register_blueprint(pages_bp)
     app.register_blueprint(admin_bp)
+    _apply_security_headers(app)
 
     @app.route('/health')
     def health():

@@ -59,7 +59,7 @@ def contact():
             message = request.form.get('message', '').strip()
             
             # Validate inputs
-            if not name or not email or not message:
+            if not name or not email or not phone or not message:
                 flash("Please fill in all required fields.", "error")
                 if return_to_homepage:
                     return _redirect_after_submit()

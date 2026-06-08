@@ -1,4 +1,5 @@
 import logging
+import mimetypes
 import re
 import io
 import os
@@ -98,39 +99,27 @@ def consignment_pod(consignment_number):
             except Exception:
                 return jsonify({"success": False, "message": "Failed to retrieve external POD."}), 502
 
-        # Supabase-stored value: "supabase:bucket/path"
+        # Supabase-stored value: "supabase:bucket/path". Keep this route as the
+        # permanent public download endpoint and stream bytes directly instead of
+        # redirecting users to a temporary storage URL.
         if isinstance(pod_path, str) and pod_path.startswith("supabase:"):
-            # import helper lazily to avoid circular imports
             try:
-                from app.admin.consignment_controller import _get_supabase_client
+                from app.admin.consignment_controller import _download_supabase_pod_file
+
+                content_bytes, object_path = _download_supabase_pod_file(pod_path)
+                mimetype, _ = mimetypes.guess_type(object_path)
+                filename = os.path.basename(object_path) or f"{number}_pod.jpg"
+                return send_file(
+                    io.BytesIO(content_bytes),
+                    as_attachment=True,
+                    download_name=filename,
+                    mimetype=mimetype or "application/octet-stream",
+                )
+            except RuntimeError as error:
+                logger.exception('Error downloading Supabase POD file')
+                return jsonify({"success": False, "message": str(error)}), 500
             except Exception:
-                _get_supabase_client = None
-
-            client = None
-            if _get_supabase_client:
-                client = _get_supabase_client()
-
-            if not client:
-                return jsonify({"success": False, "message": "Supabase not configured."}), 500
-
-            try:
-                _, rest = pod_path.split(":", 1)
-                bucket, object_path = rest.split("/", 1)
-                # create a short signed url and redirect the client to it
-                ttl = int(os.getenv('SUPABASE_SIGNED_URL_TTL', '30'))
-                signed = client.storage.from_(bucket).create_signed_url(object_path, ttl)
-                url = None
-                if isinstance(signed, dict):
-                    url = signed.get('signedURL') or signed.get('signed_url') or signed.get('signedUrl')
-                if not url:
-                    pub = client.storage.from_(bucket).get_public_url(object_path)
-                    url = pub.get('publicURL') or pub.get('publicUrl')
-                if not url:
-                    return jsonify({"success": False, "message": "Unable to generate POD URL."}), 500
-
-                return redirect(url)
-            except Exception:
-                logger.exception('Error generating Supabase POD URL')
+                logger.exception('Error serving Supabase POD file')
                 return jsonify({"success": False, "message": "Failed to serve POD."}), 500
 
         # Otherwise treat as local filename under instance/uploads
@@ -141,7 +130,27 @@ def consignment_pod(consignment_number):
 
         logger.info(f"POD PATH: {safe_path}")
         if not os.path.exists(safe_path):
-            return jsonify({"success": False, "message": "POD file missing."}), 404
+            try:
+                from app.admin.consignment_controller import _download_legacy_supabase_pod_file
+
+                content_bytes, bucket, object_path = _download_legacy_supabase_pod_file(
+                    getattr(consignment, "id", None),
+                    pod_path,
+                )
+                consignment.pod_image = f"supabase:{bucket}/{object_path}"
+                db.session.commit()
+                mimetype, _ = mimetypes.guess_type(object_path)
+                filename = os.path.basename(object_path) or f"{number}_pod.jpg"
+                return send_file(
+                    io.BytesIO(content_bytes),
+                    as_attachment=True,
+                    download_name=filename,
+                    mimetype=mimetype or "application/octet-stream",
+                )
+            except Exception:
+                db.session.rollback()
+                logger.exception('Legacy local POD was not found locally or in Supabase')
+                return jsonify({"success": False, "message": "POD file missing."}), 404
 
         # serve as attachment so browsers download; convert to JPEG for consistent .jpg
         try:

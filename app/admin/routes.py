@@ -1,5 +1,6 @@
-from flask import render_template, jsonify, send_file, session
+from flask import render_template, jsonify, send_file, session, flash, redirect, request, url_for
 from sqlalchemy.exc import OperationalError, DatabaseError
+from sqlalchemy import func, or_
 from datetime import datetime, UTC
 import json
 import logging
@@ -144,3 +145,27 @@ def leads_panel():
     except Exception as e:
         logger.error("Unexpected error loading leads panel: %s", e)
         return render_template("admin/leads.html", leads=[], error="An unexpected error occurred.")
+
+
+@admin_bp.route("/admin/leads/reject-empty-phone", methods=["POST"])
+@require_admin
+def reject_empty_phone_leads():
+    try:
+        deleted_count = (
+            Lead.query.filter(
+                or_(
+                    Lead.phone.is_(None),
+                    func.trim(Lead.phone) == "",
+                )
+            ).delete(synchronize_session=False)
+        )
+        db.session.commit()
+
+        flash(f"Rejected {deleted_count} lead(s) with empty phone numbers.", "success")
+        logger.info("Rejected %s lead(s) with empty phone numbers from admin panel", deleted_count)
+    except Exception as e:
+        db.session.rollback()
+        logger.error("Failed to reject blank-phone leads: %s", e, exc_info=True)
+        flash("Unable to reject blank-phone leads right now.", "error")
+
+    return redirect(url_for("admin.leads_panel"))
