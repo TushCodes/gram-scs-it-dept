@@ -83,11 +83,12 @@ def _parse_supabase_pod_value(pod_value):
     return bucket, object_path
 
 
-def _download_supabase_object(bucket, object_path):
+def _download_supabase_pod_file(pod_value):
     client = _get_supabase_client()
     if not client:
         raise RuntimeError('Supabase not configured.')
 
+    bucket, object_path = _parse_supabase_pod_value(pod_value)
     content = client.storage.from_(bucket).download(object_path)
     if hasattr(content, 'read'):
         content = content.read()
@@ -96,41 +97,7 @@ def _download_supabase_object(bucket, object_path):
     if not isinstance(content, bytes):
         raise RuntimeError('Unexpected Supabase download response.')
 
-    return content
-
-
-def _download_supabase_pod_file(pod_value):
-    bucket, object_path = _parse_supabase_pod_value(pod_value)
-    return _download_supabase_object(bucket, object_path), object_path
-
-
-def _legacy_supabase_object_path_candidates(consignment_id, filename):
-    safe_filename = os.path.basename(str(filename or '').strip())
-    if not safe_filename:
-        return []
-
-    candidates = []
-    if consignment_id:
-        candidates.append(f"{consignment_id}/{safe_filename}")
-    candidates.append(f"consignments/{safe_filename}")
-    candidates.append(safe_filename)
-
-    return list(dict.fromkeys(candidates))
-
-
-def _download_legacy_supabase_pod_file(consignment_id, filename, bucket_name=None):
-    bucket = bucket_name or os.getenv('SUPABASE_BUCKET', 'pod-uploads')
-    last_error = None
-    for object_path in _legacy_supabase_object_path_candidates(consignment_id, filename):
-        try:
-            return _download_supabase_object(bucket, object_path), bucket, object_path
-        except Exception as error:
-            last_error = error
-
-    if last_error:
-        raise last_error
-
-    raise RuntimeError('No legacy Supabase POD path candidates found.')
+    return content, object_path
 
 
 def _delete_pod_file(pod_value):
