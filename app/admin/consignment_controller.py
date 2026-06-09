@@ -584,7 +584,9 @@ def consignments_save():
             logger.exception("Failed to inspect consignment table columns")
 
         for deleted_id in validated_deleted_ids:
-            db.session.delete(existing[deleted_id])
+            consignment = db.session.get(Consignment, int(deleted_id))
+            if consignment is not None:
+                db.session.delete(consignment)
 
         for row in validated_rows:
             if row["id"]:
