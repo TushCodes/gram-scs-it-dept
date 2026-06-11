@@ -1,0 +1,1 @@
+Keep a single base for copyright. Right now - base.html, index.html, about.html, alt.html have their own versions. 
