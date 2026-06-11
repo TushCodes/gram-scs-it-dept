@@ -2,7 +2,7 @@ import multiprocessing
 import os
 
 
-port = os.getenv("PORT", "10000")
+port = os.getenv("PORT") or "10000"
 bind = f"0.0.0.0:{port}"
 
 # Ensure availability even when one request (for example /health/db) is waiting on DB.
