@@ -66,6 +66,8 @@
       <a href="{{ url_for('admin.consignments_export_pdf') }}" class="btn btn-outline-dark btn-sm">Export PDF</a>
       <button id="add-row-btn" type="button" class="btn btn-outline-primary btn-sm">Add Row</button>
       <button id="save-btn" type="button" class="btn btn-success btn-sm">Save All</button>
+      <input id="archive-date-input" type="date" class="form-control form-control-sm" style="max-width: 180px;" title="Archive delivered consignments before this date" />
+      <button id="archive-delivered-btn" type="button" class="btn btn-warning btn-sm">Archive Delivered</button>
     </div>
   </div>
 
@@ -144,7 +146,8 @@
         id="sheet-body"
         data-existing-rows="{{ consignments | tojson | forceescape }}"
         data-save-url="{{ url_for('admin.consignments_save') }}"
-        data-list-url="{{ url_for('admin.consignments_list_api') }}"></tbody>
+        data-list-url="{{ url_for('admin.consignments_list_api') }}"
+        data-archive-url="{{ url_for('admin.consignments_archive') }}"></tbody>
     </table>
   </div>
 

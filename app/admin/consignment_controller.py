@@ -7,6 +7,7 @@ import uuid
 import base64
 import binascii
 import tempfile
+from datetime import datetime
 from flask import current_app
 from werkzeug.utils import secure_filename
 import io as _io
@@ -197,6 +198,24 @@ def _delete_pod_file(pod_value):
             os.remove(pod_path)
         except Exception:
             logger.exception('Failed to remove POD file from disk')
+
+
+def _parse_date_string(value):
+    if not value or not isinstance(value, str):
+        return None
+
+    value = value.strip()
+    if not value:
+        return None
+
+    # Prefer ISO date format, but support common day/month/year formats if present.
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+
+    return None
 
 from flask import flash, jsonify, redirect, render_template, request, send_file, url_for
 from openpyxl import Workbook, load_workbook
@@ -653,26 +672,51 @@ def consignments_save():
         db.session.rollback()
         logger.exception("Integrity error in admin save")
         return jsonify({"success": False, "message": "Duplicate consignment number already exists."}), 400
-    except ProgrammingError as error:
-        db.session.rollback()
-        if _is_missing_column_error(error):
-            logger.exception("Schema mismatch in admin save")
-            return jsonify({"success": False, "message": "Database schema needs an update. Missing consignment fields."}), 500
-
-        logger.exception("Database error in admin save")
-        return jsonify({"success": False, "message": "Database connection error. Please try again."}), 500
-    except (OperationalError, DatabaseError):
-        db.session.rollback()
-        logger.exception("Database error in admin save")
-        return jsonify({"success": False, "message": "Database connection error. Please try again."}), 500
-    except ValueError as error:
-        db.session.rollback()
-        logger.exception("Validation error in admin save")
-        return jsonify({"success": False, "message": str(error)}), 400
     except Exception:
         db.session.rollback()
         logger.exception("Unexpected error in admin save")
         return jsonify({"success": False, "message": "An unexpected error occurred. Please try again."}), 500
+
+
+@admin_bp.route("/admin/consignments/archive", methods=["POST"], endpoint="consignments_archive")
+@limiter.limit("10 per minute")
+@require_admin
+def consignments_archive():
+    payload = request.get_json(silent=True) or {}
+    before_date = str(payload.get("before_date") or "").strip()
+
+    if not before_date:
+        return jsonify({"success": False, "message": "Please provide a cutoff date."}), 400
+
+    cutoff_date = _parse_date_string(before_date)
+    if cutoff_date is None:
+        return jsonify({"success": False, "message": "Cutoff date must be a valid date in YYYY-MM-DD format."}), 400
+
+    try:
+        query = Consignment.query.filter(Consignment.status.ilike("Delivered"))
+        query = query.filter(Consignment.drop_date.isnot(None), Consignment.drop_date != "")
+
+        archived_count = 0
+        for consignment in query.all():
+            drop_date = _parse_date_string(getattr(consignment, "drop_date", ""))
+            if drop_date is None:
+                continue
+            if drop_date < cutoff_date:
+                if getattr(consignment, "pod_image", None):
+                    _delete_pod_file(consignment.pod_image)
+                db.session.delete(consignment)
+                archived_count += 1
+
+        db.session.commit()
+        return jsonify({"success": True, "archived_count": archived_count})
+    except (OperationalError, DatabaseError):
+        db.session.rollback()
+        logger.exception("Database error archiving consignments")
+        return jsonify({"success": False, "message": "Unable to archive consignments. Please try again."}), 500
+    except Exception:
+        db.session.rollback()
+        logger.exception("Unexpected error archiving consignments")
+        return jsonify({"success": False, "message": "An unexpected error occurred while archiving consignments."}), 500
 
 
 @admin_bp.route("/admin/consignments/import", methods=["POST"], endpoint="consignments_import_excel")

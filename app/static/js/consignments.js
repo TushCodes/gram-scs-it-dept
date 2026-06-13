@@ -36,6 +36,9 @@ document.addEventListener("DOMContentLoaded", function () {
     var totalPages = 1;
     var stagedPodUpload = null;
     var statusTimeoutId = null;
+    var archiveUrl = tableBody.dataset.archiveUrl || "";
+    var archiveDateInput = document.getElementById("archive-date-input");
+    var archiveDeliveredBtn = document.getElementById("archive-delivered-btn");
 
     function showStatus(message, type) {
         var el = document.getElementById("status-msg");
@@ -760,6 +763,45 @@ document.addEventListener("DOMContentLoaded", function () {
         var imageSource = rowData.pod_image ? '/admin/consignments/' + rowData.id + '/pod' : podPath;
         podViewerContent.innerHTML = '<img src="' + imageSource + '" style="max-width:100%;max-height:75vh;height:auto;display:block;margin:0 auto;" />';
         podViewerModal.show();
+    }
+
+    if (archiveDeliveredBtn) {
+      archiveDeliveredBtn.addEventListener("click", async function () {
+        if (!archiveUrl) {
+          showStatus("Archive endpoint is not configured.", "danger");
+          return;
+        }
+
+        var selectedDate = (archiveDateInput && archiveDateInput.value) ? archiveDateInput.value.trim() : "";
+        if (!selectedDate) {
+          showStatus("Please choose a cutoff date before archiving delivered consignments.", "warning");
+          return;
+        }
+
+        if (!confirm('Archive all delivered consignments with drop date before ' + selectedDate + '? This will remove them from the database.')) {
+          return;
+        }
+
+        try {
+          archiveDeliveredBtn.disabled = true;
+          var originalButtonText = archiveDeliveredBtn.textContent;
+          archiveDeliveredBtn.textContent = "Archiving...";
+          showStatus('<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Archiving delivered consignments...', "info");
+
+          var data = await adminAPI.archiveDelivered(archiveUrl, { before_date: selectedDate });
+          if (!data || !data.success) {
+            throw new Error((data && data.message) || "Archive request failed.");
+          }
+
+          showStatus("<strong>Archive completed.</strong> Removed " + (data.archived_count || 0) + " delivered consignment(s).", "success");
+          loadPage(1, currentSearch, currentPerPage, currentSortBy, currentSortOrder);
+        } catch (error) {
+          showStatus("<strong>Archive failed.</strong> " + escapeHtml(error.message || "Please try again."), "danger");
+        } finally {
+          archiveDeliveredBtn.disabled = false;
+          archiveDeliveredBtn.textContent = originalButtonText || "Archive Delivered";
+        }
+      });
     }
 
     saveButton.addEventListener("click", saveSheet);
