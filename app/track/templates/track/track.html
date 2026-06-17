@@ -236,6 +236,12 @@
                         {% endif %}
                     </div>
                 </div>
+                {% if consignment.eta %}
+                <div class="mt-3">
+                    <span class="track-label">ETA</span>
+                    <p class="track-metric-value">{{ consignment.eta }}</p>
+                </div>
+                {% endif %}
                 {% if consignment %}
                 <div class="mt-3">
                     {% if consignment.pod_image %}

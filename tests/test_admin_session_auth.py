@@ -3,13 +3,14 @@ import unittest
 import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+from werkzeug.security import generate_password_hash
 
 
 # Configure required environment variables before importing app modules.
-os.environ.setdefault("DATABASE_URL", "postgresql://user:pass@localhost:5432/gramscs")
+os.environ.setdefault("DATABASE_URL", "sqlite:///test.db")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-admin-session-auth")
 os.environ.setdefault("ADMIN_USERNAME", "admin")
-os.environ.setdefault("ADMIN_PASSWORD_HASH", "scrypt:32768:8:1$yFUNQ6eCe1ScMEcQ$d94441786edd350236b9340455e3302df2cbb8cf12ba94311abf8d2f1c52b75a20efc1c7a7a8ffaa0357c3b9e0f246dea70c4ea368f0346072f03f55325f913b")
+os.environ.setdefault("ADMIN_PASSWORD_HASH", generate_password_hash("gram@2017"))
 os.environ.setdefault("AUTO_CREATE_TABLES", "false")
 
 from app import create_app

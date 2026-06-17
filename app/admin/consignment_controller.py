@@ -241,6 +241,13 @@ logger = logging.getLogger(__name__)
 MAX_POD_IMAGE_BYTES = 5 * 1024 * 1024
 
 
+def _is_external_pod_url(value):
+    if not isinstance(value, str):
+        return False
+    lowered = value.strip().lower()
+    return lowered.startswith("http://") or lowered.startswith("https://")
+
+
 def _is_missing_column_error(error):
     """Return True when the database rejected a query because a column is absent."""
     original = getattr(error, "orig", None)
@@ -563,6 +570,16 @@ def consignments_save():
             pod_file_data = str(row.get("pod_file_data") or "").strip() or None
             pod_file_name = str(row.get("pod_file_name") or "").strip() or None
             pod_file_type = str(row.get("pod_file_type") or "").strip() or None
+            pod_image = str(row.get("pod_image") or "").strip() or None
+
+            # Never persist external POD URLs. They are often presigned and expire,
+            # which breaks long-term archive requirements.
+            if pod_image and _is_external_pod_url(pod_image):
+                errors.append({
+                    "index": idx,
+                    "field": "pod_image",
+                    "message": "External POD URLs are not allowed. Upload the image file so we can store a permanent reference.",
+                })
 
             validated_rows.append({
                 "id": row_id,
@@ -577,7 +594,7 @@ def consignments_save():
                 "drop_tag": drop_tag,
                 "drop_date": drop_date,
                 "eta": eta,
-                "pod_image": str(row.get("pod_image") or "").strip() or None,
+                "pod_image": pod_image,
                 "pod_file_data": pod_file_data,
                 "pod_file_name": pod_file_name,
                 "pod_file_type": pod_file_type,
@@ -974,7 +991,7 @@ def consignments_import_template_excel():
 def consignment_pod_file(consignment_id):
     """Serve the POD file for a consignment if present."""
     try:
-        consignment = Consignment.query.get(consignment_id)
+        consignment = db.session.get(Consignment, consignment_id)
         if not consignment or not getattr(consignment, "pod_image", None):
             return jsonify({"success": False, "message": "No POD found."}), 404
 
@@ -1037,7 +1054,7 @@ def consignment_pod_upload(consignment_id):
         return jsonify({"success": False, "message": "POD must be an image file."}), 400
 
     try:
-        consignment = Consignment.query.get(consignment_id)
+        consignment = db.session.get(Consignment, consignment_id)
         if not consignment:
             return jsonify({"success": False, "message": "Consignment not found."}), 404
 
@@ -1102,7 +1119,7 @@ def consignment_pod_upload(consignment_id):
 def consignment_pod_delete(consignment_id):
     """Delete POD association (and file if present)."""
     try:
-        consignment = Consignment.query.get(consignment_id)
+        consignment = db.session.get(Consignment, consignment_id)
         if not consignment or not getattr(consignment, "pod_image", None):
             return jsonify({"success": False, "message": "No POD to delete."}), 404
 

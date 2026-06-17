@@ -3,12 +3,6 @@ import base64
 from io import BytesIO
 
 import pytest
-import sys
-import pathlib
-
-# Ensure project root is on sys.path so `app` package is importable when running tests
-ROOT = pathlib.Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
 
 
 def setup_env_for_app(tmp_path):
@@ -72,7 +66,7 @@ def test_pod_upload_and_delete(tmp_path):
 
     # Confirm DB field cleared
     with app.app_context():
-        row = Consignment.query.get(cid)
+        row = db.session.get(Consignment, cid)
         assert row.pod_image in (None, '')
 
 
@@ -140,6 +134,7 @@ def test_staged_pod_upload_saves_with_row(tmp_path):
             assert file_handle.read() == pod_bytes
 
 
+<<<<<<< HEAD
 class FakeSupabaseBucket:
     def __init__(self, store, bucket_name):
         self.store = store
@@ -182,6 +177,13 @@ def test_supabase_pod_upload_serves_permanent_app_endpoint_without_signed_url(tm
     fake_supabase = FakeSupabaseClient()
     monkeypatch.setattr(controller, '_get_supabase_client', lambda: fake_supabase)
     monkeypatch.setenv('SUPABASE_BUCKET', 'pod-uploads')
+=======
+def test_save_rejects_external_pod_url(tmp_path):
+    setup_env_for_app(tmp_path)
+
+    from app import create_app
+    from app.models import db
+>>>>>>> 9e3b807 (Permanently fixing startup issues)
 
     app = create_app()
     app.instance_path = str(tmp_path / 'instance')
@@ -195,15 +197,19 @@ def test_supabase_pod_upload_serves_permanent_app_endpoint_without_signed_url(tm
         except Exception:
             pass
         db.create_all()
+<<<<<<< HEAD
         c = Consignment(consignment_number='SUPACN1', status='In Transit')
         db.session.add(c)
         db.session.commit()
         cid = c.id
+=======
+>>>>>>> 9e3b807 (Permanently fixing startup issues)
 
     from app.admin.auth import ADMIN_SESSION_KEY
     with client.session_transaction() as sess:
         sess[ADMIN_SESSION_KEY] = True
 
+<<<<<<< HEAD
     resp = client.post(
         f'/admin/consignments/{cid}/pod',
         data={'file': (BytesIO(b'supabase-pod-bytes'), 'pod.jpg')},
@@ -259,3 +265,32 @@ def test_track_pod_streams_supabase_file_without_signed_url(tmp_path, monkeypatc
     assert get_resp.data == b'track-supabase-pod-bytes'
     assert get_resp.location is None
     assert 'attachment' in get_resp.headers.get('Content-Disposition', '')
+=======
+    payload = {
+        'rows': [
+            {
+                'id': None,
+                'consignment_number': 'URLPOD001',
+                'status': 'In Transit',
+                'pickup_pincode': '',
+                'pickup_address': '',
+                'pickup_tag': '',
+                'pickup_date': '',
+                'drop_pincode': '',
+                'drop_address': '',
+                'drop_tag': '',
+                'drop_date': '',
+                'eta': '',
+                'pod_image': 'https://example.com/signed-or-temporary-url.jpg',
+            }
+        ],
+        'deleted_ids': [],
+    }
+
+    resp = client.post('/admin/consignments/save', json=payload)
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert body and body.get('success') is False
+    assert isinstance(body.get('errors'), list)
+    assert any(error.get('field') == 'pod_image' for error in body.get('errors'))
+>>>>>>> 9e3b807 (Permanently fixing startup issues)
