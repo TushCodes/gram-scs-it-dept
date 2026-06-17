@@ -133,6 +133,14 @@ def _should_auto_create_tables():
     return _env_bool('AUTO_CREATE_TABLES', default=True)
 
 
+def _default_local_sqlite_uri():
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    instance_dir = os.path.join(repo_root, 'instance')
+    os.makedirs(instance_dir, exist_ok=True)
+    database_path = os.path.join(instance_dir, 'dev.db')
+    return f'sqlite:///{database_path}'
+
+
 if _should_load_local_env_files():
     _load_env_file('.env.local')
     _load_env_file('.env')
@@ -142,12 +150,14 @@ def _require_database_uri():
     """Require a PostgreSQL DATABASE_URL for production, allow SQLite in development."""
     raw_uri = os.getenv('DATABASE_URL', '').strip()
     if not raw_uri:
-        if os.getenv('FLASK_ENV', '').strip().lower() == 'development':
-            return 'sqlite:///test.db'
-        raise RuntimeError('DATABASE_URL is required. SQLite is no longer supported.')
+        if os.getenv('FLASK_ENV', '').strip().lower() == 'production':
+            raise RuntimeError('DATABASE_URL is required in production.')
+
+        logger.warning('DATABASE_URL is not set; using local SQLite fallback for development.')
+        return _default_local_sqlite_uri()
 
     if raw_uri.startswith('sqlite://'):
-        if os.getenv('FLASK_ENV', '').strip().lower() == 'development':
+        if os.getenv('FLASK_ENV', '').strip().lower() != 'production':
             return raw_uri
         raise RuntimeError('SQLite is only supported for development testing.')
 
@@ -349,7 +359,7 @@ def create_app():
     from app.main.routes import main_bp
     from app.track.routes import track_bp
     from app.pages.routes import pages_bp
-    from app.admin.routes import admin_bp
+    from app.admin import admin_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(track_bp)
