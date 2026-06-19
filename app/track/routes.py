@@ -6,7 +6,7 @@ import os
 import requests
 
 from flask import Blueprint, render_template, request
-from flask import jsonify, redirect, send_file, current_app
+from flask import jsonify, send_file, current_app
 from sqlalchemy.exc import DatabaseError, OperationalError
 
 from app.models import db
@@ -21,8 +21,8 @@ CONSIGNMENT_NUMBER_PATTERN = re.compile(r"^[A-Za-z0-9]{1,16}$")
 
 @track_bp.route("/track", methods=["GET", "POST"])
 def track_page():
-    consignment = None
     error_message = None
+    searched_number = None
 
     if request.method == "POST":
         number = (request.form.get("consignment_number") or "").strip().upper()
@@ -34,6 +34,7 @@ def track_page():
             error_message = "Invalid consignment number format."
             logger.warning("Rejected invalid consignment number: %s", number)
         else:
+            searched_number = number
             logger.info("Track lookup received for consignment %s", number)
             try:
                 consignment = TrackConsignment.query.filter_by(consignment_number=number).first()
@@ -52,9 +53,52 @@ def track_page():
 
     return render_template(
         "track/track.html",
-        consignment=consignment,
         error_message=error_message,
+        searched_number=searched_number,
     )
+
+
+def _serialize_consignment(consignment):
+    return {
+        "consignment_number": consignment.consignment_number,
+        "status": consignment.status,
+        "pickup_pincode": consignment.pickup_pincode,
+        "pickup_address": consignment.pickup_address,
+        "pickup_tag": consignment.pickup_tag,
+        "pickup_date": consignment.pickup_date,
+        "drop_pincode": consignment.drop_pincode,
+        "drop_address": consignment.drop_address,
+        "drop_tag": consignment.drop_tag,
+        "drop_date": consignment.drop_date,
+        "eta": consignment.eta,
+        "pod_image": bool(consignment.pod_image),
+    }
+
+
+@track_bp.route("/api/track/<consignment_number>", methods=["GET"], endpoint="track_lookup_api")
+def track_lookup_api(consignment_number):
+    number = (consignment_number or "").strip().upper()
+    if not number:
+        return jsonify({"success": False, "message": "Please enter a consignment number."}), 400
+    if not CONSIGNMENT_NUMBER_PATTERN.fullmatch(number):
+        logger.warning("Rejected invalid consignment number: %s", number)
+        return jsonify({"success": False, "message": "Invalid consignment number format."}), 400
+
+    logger.info("Track API lookup received for consignment %s", number)
+    try:
+        consignment = TrackConsignment.query.filter_by(consignment_number=number).first()
+        if not consignment:
+            logger.info("Shipment not found for consignment %s", number)
+            return jsonify({"success": False, "message": "Consignment not found. Please check the number and try again."}), 404
+
+        logger.info("Shipment found for consignment %s", number)
+        return jsonify({"success": True, "data": _serialize_consignment(consignment)})
+    except (OperationalError, DatabaseError) as error:
+        logger.error("Database error while tracking %s: %s", number, error)
+        return jsonify({"success": False, "message": "Unable to connect to database. Please try again later."}), 503
+    except Exception:
+        logger.exception("Unexpected error while tracking %s", number)
+        return jsonify({"success": False, "message": "An unexpected error occurred. Please try again."}), 500
 
 
 @track_bp.route("/track/pod/<consignment_number>", methods=["GET"], endpoint="consignment_pod")
