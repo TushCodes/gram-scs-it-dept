@@ -13,6 +13,9 @@ VENV_DIR = PROJECT_ROOT / '.venv'
 REQUIREMENTS_FILE = PROJECT_ROOT / 'requirements.txt'
 RUNTIME_IMPORTS = {
     'flask': 'Flask',
+    'flask_limiter': 'Flask-Limiter',
+    'flask_sqlalchemy': 'Flask-SQLAlchemy',
+    'limits.storage': 'limits',
 }
 
 
@@ -27,19 +30,35 @@ def _missing_imports(python_executable=None):
         return [package for module, package in RUNTIME_IMPORTS.items() if importlib.util.find_spec(module) is None]
 
     check_script = (
-        'import importlib.util, sys; '
-        f'missing = [module for module in {list(RUNTIME_IMPORTS)!r} if importlib.util.find_spec(module) is None]; '
-        'sys.exit(1 if missing else 0)'
+        'import importlib.util, json; '
+        f'imports = {RUNTIME_IMPORTS!r}; '
+        'missing = [package for module, package in imports.items() if importlib.util.find_spec(module) is None]; '
+        'print(json.dumps(missing))'
     )
-    result = subprocess.run([str(python_executable), '-c', check_script], check=False)
-    return list(RUNTIME_IMPORTS.values()) if result.returncode else []
+    result = subprocess.run(
+        [str(python_executable), '-c', check_script],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode:
+        return list(RUNTIME_IMPORTS.values())
+
+    try:
+        return __import__('json').loads(result.stdout or '[]')
+    except Exception:
+        return list(RUNTIME_IMPORTS.values())
 
 
-def _install_requirements(python_executable):
+def _install_requirements(python_executable, force_reinstall=False):
     if not REQUIREMENTS_FILE.exists():
         raise FileNotFoundError(f'Cannot install dependencies because {REQUIREMENTS_FILE} does not exist.')
 
-    subprocess.check_call([str(python_executable), '-m', 'pip', 'install', '-r', str(REQUIREMENTS_FILE)])
+    command = [str(python_executable), '-m', 'pip', 'install']
+    if force_reinstall:
+        command.append('--force-reinstall')
+    command.extend(['-r', str(REQUIREMENTS_FILE)])
+    subprocess.check_call(command)
 
 
 def _ensure_local_runtime_environment():
@@ -58,6 +77,20 @@ def _ensure_local_runtime_environment():
     # transitive packages that can otherwise surface as ModuleNotFoundError later.
     print('Ensuring Python dependencies from requirements.txt are installed ...')
     _install_requirements(venv_python)
+
+    venv_missing = _missing_imports(venv_python)
+    if venv_missing:
+        print(
+            'Repairing incomplete Python dependency installation for: '
+            + ', '.join(venv_missing)
+        )
+        _install_requirements(venv_python, force_reinstall=True)
+        venv_missing = _missing_imports(venv_python)
+        if venv_missing:
+            raise RuntimeError(
+                'Python dependencies are still missing after reinstall: '
+                + ', '.join(venv_missing)
+            )
 
     if Path(sys.executable).resolve() != venv_python.resolve():
         print(f"Restarting with {venv_python} because the current Python is missing: {', '.join(missing)}")
