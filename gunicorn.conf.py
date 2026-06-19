@@ -2,11 +2,17 @@ import multiprocessing
 import os
 
 
-port_env = (os.getenv("PORT") or "").strip()
-if port_env.isdigit() and 1 <= int(port_env) <= 65535:
-    port = port_env
-else:
-    port = "10000"
+def _coerce_port(raw_port, default="10000"):
+    """Return a valid TCP port string from common platform PORT formats."""
+    raw_port = (raw_port or "").strip()
+    if ":" in raw_port:
+        raw_port = raw_port.rsplit(":", 1)[-1].strip()
+    if raw_port.isdigit() and 1 <= int(raw_port) <= 65535:
+        return raw_port
+    return default
+
+
+port = _coerce_port(os.getenv("PORT"))
 bind = f"0.0.0.0:{port}"
 
 # Ensure availability even when one request (for example /health/db) is waiting on DB.
