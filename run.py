@@ -35,55 +35,32 @@ def _missing_imports(python_executable=None):
     return list(RUNTIME_IMPORTS.values()) if result.returncode else []
 
 
-def _app_import_is_healthy(python_executable):
-    health_script = (
-        'from app import create_app; '
-        'create_app()'
-    )
-    result = subprocess.run(
-        [str(python_executable), '-c', health_script],
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    return result.returncode == 0
-
-
-def _install_requirements(python_executable, force=False):
+def _install_requirements(python_executable):
     if not REQUIREMENTS_FILE.exists():
         raise FileNotFoundError(f'Cannot install dependencies because {REQUIREMENTS_FILE} does not exist.')
 
-    command = [str(python_executable), '-m', 'pip', 'install']
-    if force:
-        command.extend(['--upgrade', '--force-reinstall'])
-    command.extend(['-r', str(REQUIREMENTS_FILE)])
-    subprocess.check_call(command)
+    subprocess.check_call([str(python_executable), '-m', 'pip', 'install', '-r', str(REQUIREMENTS_FILE)])
 
 
 def _ensure_local_runtime_environment():
-    """Make `python run.py` work on a fresh checkout by using a healthy project virtualenv."""
+    """Make `python run.py` work on a fresh checkout by using a project virtualenv."""
     missing = _missing_imports()
-    current_python = Path(sys.executable).resolve()
-    current_is_healthy = not missing and _app_import_is_healthy(current_python)
-    if current_is_healthy:
+    if not missing:
         return
 
     venv_python = _venv_python()
-    if current_python == venv_python.resolve():
-        target_python = current_python
-    else:
-        if not venv_python.exists():
-            print('Creating local Python virtual environment in .venv ...')
-            venv.EnvBuilder(with_pip=True).create(VENV_DIR)
-        target_python = venv_python
+    if not venv_python.exists():
+        print('Creating local Python virtual environment in .venv ...')
+        venv.EnvBuilder(with_pip=True).create(VENV_DIR)
 
-    force_reinstall = not _app_import_is_healthy(target_python)
+    # Always sync requirements before switching into the project virtualenv.
+    # This repairs stale or partially installed environments, including missing
+    # transitive packages that can otherwise surface as ModuleNotFoundError later.
     print('Ensuring Python dependencies from requirements.txt are installed ...')
-    _install_requirements(target_python, force=force_reinstall)
+    _install_requirements(venv_python)
 
-    if current_python != venv_python.resolve():
-        reason = ', '.join(missing) if missing else 'an unhealthy runtime dependency set'
-        print(f"Restarting with {venv_python} because the current Python is missing or failing: {reason}")
+    if Path(sys.executable).resolve() != venv_python.resolve():
+        print(f"Restarting with {venv_python} because the current Python is missing: {', '.join(missing)}")
         os.execv(str(venv_python), [str(venv_python), *sys.argv])
 
 
