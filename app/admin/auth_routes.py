@@ -1,12 +1,4 @@
-"""
-Authentication routes for the admin panel.
-
-Routes
-------
-GET  /admin/login   Render the login form.
-POST /admin/login   Validate credentials and set session auth.
-GET  /admin/logout  Clear session auth and redirect to login.
-"""
+"""Authentication routes for the admin panel."""
 
 import logging
 
@@ -23,23 +15,19 @@ from app.admin.auth import (
 
 logger = logging.getLogger(__name__)
 
+
 @admin_bp.route("/admin/login", methods=["GET"])
 def login():
-    """Render the admin login form."""
     if is_admin_authenticated():
         return redirect(url_for("admin.dashboard"))
-
     return render_template("admin/login.html", error=None)
 
 
 @admin_bp.route("/admin/login", methods=["POST"])
 @limiter.limit("5 per minute")
 def login_submit():
-    """Process the admin login form."""
     if is_admin_authenticated():
         return redirect(url_for("admin.dashboard"))
-
-    error = None
 
     username = (request.form.get("username") or "").strip()
     password = request.form.get("password") or ""
@@ -50,15 +38,12 @@ def login_submit():
         return redirect(url_for("admin.dashboard"))
 
     logger.warning("Failed admin login attempt for username: %s", username)
-    error = "Invalid username or password."
-
-    return render_template("admin/login.html", error=error)
+    return render_template("admin/login.html", error="Invalid username or password.")
 
 
 @admin_bp.route("/admin/logout", methods=["GET"])
 @limiter.limit("10 per minute")
 def logout():
-    """Clear admin session and redirect to the login page."""
     logout_admin()
     logger.info("Admin logged out.")
     return redirect(url_for("admin.login"))

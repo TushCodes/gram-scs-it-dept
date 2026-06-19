@@ -40,6 +40,71 @@ document.addEventListener("DOMContentLoaded", function () {
     var archiveDateInput = document.getElementById("archive-date-input");
     var archiveDeliveredBtn = document.getElementById("archive-delivered-btn");
 
+    function buildStatusSelect(value) {
+        var options = [
+            "",
+            "Pickup Scheduled",
+            "In Transit",
+            "Out for Delivery",
+            "Delivered"
+        ];
+        var html = '<select class="form-select form-select-sm status">';
+        options.forEach(function (option) {
+            var selected = option === (value || "") ? ' selected' : '';
+            html += '<option value="' + escapeHtml(option) + '"' + selected + '>' + (option ? escapeHtml(option) : 'Select status') + '</option>';
+        });
+        html += '</select>';
+        return html;
+    }
+
+    function buildTextInput(className, value, placeholder, maxlength) {
+        var attrs = [
+            'class="form-control form-control-sm ' + className + '"',
+            'value="' + escapeHtml(value || "") + '"'
+        ];
+        if (placeholder) {
+            attrs.push('placeholder="' + escapeHtml(placeholder) + '"');
+        }
+        if (maxlength) {
+            attrs.push('maxlength="' + maxlength + '"');
+        }
+        return '<input type="text" ' + attrs.join(' ') + ' />';
+    }
+
+    function syncRowDataset(tr) {
+        if (!tr) {
+            return null;
+        }
+
+        var baseRow = {};
+        try {
+            baseRow = JSON.parse(tr.dataset.row || "{}") || {};
+        } catch (e) {
+            baseRow = {};
+        }
+
+        var row = Object.assign({}, baseRow, {
+            id: tr.dataset.id ? Number(tr.dataset.id) : (baseRow.id || null),
+            consignment_number: tr.querySelector('.consignment_number') ? tr.querySelector('.consignment_number').value.trim() : (baseRow.consignment_number || ''),
+            status: tr.querySelector('.status') ? tr.querySelector('.status').value.trim() : (baseRow.status || ''),
+            pickup_address: tr.querySelector('.pickup_address') ? tr.querySelector('.pickup_address').value.trim() : (baseRow.pickup_address || ''),
+            pickup_pincode: tr.querySelector('.pickup_pincode') ? tr.querySelector('.pickup_pincode').value.trim() : (baseRow.pickup_pincode || ''),
+            pickup_tag: tr.querySelector('.pickup_tag') ? tr.querySelector('.pickup_tag').value.trim() : (baseRow.pickup_tag || ''),
+            pickup_date: tr.querySelector('.pickup_date') ? tr.querySelector('.pickup_date').value.trim() : (baseRow.pickup_date || ''),
+            drop_address: tr.querySelector('.drop_address') ? tr.querySelector('.drop_address').value.trim() : (baseRow.drop_address || ''),
+            drop_pincode: tr.querySelector('.drop_pincode') ? tr.querySelector('.drop_pincode').value.trim() : (baseRow.drop_pincode || ''),
+            drop_tag: tr.querySelector('.drop_tag') ? tr.querySelector('.drop_tag').value.trim() : (baseRow.drop_tag || ''),
+            drop_date: tr.querySelector('.drop_date') ? tr.querySelector('.drop_date').value.trim() : (baseRow.drop_date || ''),
+            eta: tr.querySelector('.eta') ? tr.querySelector('.eta').value.trim() : (baseRow.eta || ''),
+            pod_image: tr.dataset.podImage || baseRow.pod_image || null,
+            pod_file_name: tr.dataset.podFileName || baseRow.pod_file_name || null,
+            pod_file_type: tr.dataset.podFileType || baseRow.pod_file_type || null,
+            pod_file_data: tr.dataset.podFileData || baseRow.pod_file_data || null
+        });
+        tr.dataset.row = JSON.stringify(row);
+        return row;
+    }
+
     function showStatus(message, type) {
         var el = document.getElementById("status-msg");
         if (!el) {
@@ -161,6 +226,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function getRowDataFromTr(tr) {
         try {
+            if (tr && tr.querySelector('.consignment_number')) {
+                return buildRowData(syncRowDataset(tr), tr.dataset.id ? Number(tr.dataset.id) : null);
+            }
             return buildRowData(JSON.parse(tr.dataset.row || "{}"), tr.dataset.id ? Number(tr.dataset.id) : null);
         } catch (error) {
             return buildRowData({}, tr.dataset.id ? Number(tr.dataset.id) : null);
@@ -173,14 +241,11 @@ document.addEventListener("DOMContentLoaded", function () {
         tr.dataset.id = source.id || "";
         tr.dataset.consignmentNumber = source.consignment_number || "";
         tr.dataset.row = JSON.stringify(source);
+        tr.dataset.podImage = source.pod_image || "";
+        tr.dataset.podFileName = source.pod_file_name || "";
+        tr.dataset.podFileType = source.pod_file_type || "";
+        tr.dataset.podFileData = source.pod_file_data || "";
         tr.dataset.isLocal = isLocal ? "true" : "false";
-
-        var consignmentNum = escapeHtml(source.consignment_number || "");
-        var status = escapeHtml(source.status || "");
-        var pickupTag = escapeHtml(source.pickup_tag || "");
-        var dropPin = escapeHtml(source.drop_pincode || "");
-        var pickupDate = escapeHtml(source.pickup_date || "");
-        var dropEta = escapeHtml(source.drop_date || source.eta || "");
 
         var rowClass = isLocal ? 'table-info' : '';
 
@@ -192,12 +257,12 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         tr.innerHTML =
-            "<td>" + consignmentNum + "</td>" +
-            "<td>" + status + "</td>" +
-            "<td>" + pickupTag + "</td>" +
-            "<td>" + dropPin + "</td>" +
-            "<td>" + pickupDate + "</td>" +
-            "<td>" + dropEta + "</td>" +
+            "<td>" + buildTextInput("consignment_number", source.consignment_number || "", "Consignment #", 16) + "</td>" +
+            "<td>" + buildStatusSelect(source.status || "") + "</td>" +
+            "<td>" + buildTextInput("pickup_tag", source.pickup_tag || "", "Pickup tag") + "</td>" +
+            "<td>" + buildTextInput("drop_pincode", source.drop_pincode || "", "Drop pin", 6) + "</td>" +
+            "<td>" + buildTextInput("pickup_date", source.pickup_date || "", "Pickup date") + "</td>" +
+            "<td>" + buildTextInput("drop_date", source.drop_date || source.eta || "", "Drop estimated") + "</td>" +
             "<td class=\"text-center\">" + podCellHtml + "</td>" +
             "<td class=\"text-center\"><button type=\"button\" class=\"btn btn-sm btn-outline-primary edit-row\" title=\"Edit\"><i class=\"fa fa-pencil\"></i></button></td>" +
             "<td class=\"text-center\"><button type=\"button\" class=\"btn btn-sm btn-outline-danger delete-row\" title=\"Delete\"><i class=\"fa fa-times\"></i></button></td>";
@@ -229,7 +294,13 @@ document.addEventListener("DOMContentLoaded", function () {
             });
         }
 
+        Array.prototype.forEach.call(tr.querySelectorAll('input, select'), function (field) {
+            field.addEventListener('input', function () { syncRowDataset(tr); });
+            field.addEventListener('change', function () { syncRowDataset(tr); });
+        });
+
         tableBody.appendChild(tr);
+        syncRowDataset(tr);
 
         // attach view-pod listener if present
         var viewBtn = tr.querySelector('.view-pod');
@@ -275,14 +346,20 @@ document.addEventListener("DOMContentLoaded", function () {
         source.pod_file_data = stagedPodUpload ? stagedPodUpload.dataUrl : (source.pod_file_data || null);
 
         if (tr) {
-            tr.cells[0].textContent = source.consignment_number || "";
+            var consignmentInput = tr.querySelector('.consignment_number');
+            if (consignmentInput) consignmentInput.value = source.consignment_number || "";
             tr.dataset.consignmentNumber = source.consignment_number || "";
-            tr.cells[1].textContent = source.status || "";
+            var statusSelect = tr.querySelector('.status');
+            if (statusSelect) statusSelect.value = source.status || "";
             tr.dataset.row = JSON.stringify(source);
-            tr.cells[2].textContent = source.pickup_tag || "";
-            tr.cells[3].textContent = source.drop_pincode || "";
-            tr.cells[4].textContent = source.pickup_date || "";
-            tr.cells[5].textContent = source.drop_date || source.eta || "";
+            var pickupTagInput = tr.querySelector('.pickup_tag');
+            if (pickupTagInput) pickupTagInput.value = source.pickup_tag || "";
+            var dropPinInput = tr.querySelector('.drop_pincode');
+            if (dropPinInput) dropPinInput.value = source.drop_pincode || "";
+            var pickupDateInput = tr.querySelector('.pickup_date');
+            if (pickupDateInput) pickupDateInput.value = source.pickup_date || "";
+            var dropDateInput = tr.querySelector('.drop_date');
+            if (dropDateInput) dropDateInput.value = source.drop_date || source.eta || "";
 
             // update POD cell (cell index 6)
             try {
@@ -637,10 +714,21 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     addRowButton.addEventListener("click", function () {
-        isCreatingRow = true;
+        isCreatingRow = false;
         currentEditingRow = null;
-        clearModal();
-        editModal.show();
+        var newId = adminState.nextLocalId();
+        var newRow = buildRowData({}, newId);
+        addRow(newRow, true);
+        adminState.pushLocalRow(newRow);
+        totalRows = (typeof totalRows === "number" ? totalRows : 0) + 1;
+        totalPages = Math.max(1, Math.ceil(totalRows / currentPerPage));
+        updatePaginationUI();
+        try {
+            var firstNewInput = tableBody.querySelector('tr:last-child .consignment_number');
+            if (firstNewInput) {
+                firstNewInput.focus();
+            }
+        } catch (e) {}
     });
 
     document.getElementById("editConsignmentModal").addEventListener("hidden.bs.modal", function () {

@@ -111,7 +111,7 @@ class ContactFormHomepageTests(unittest.TestCase):
         self.assertTrue(response.headers["Location"].endswith("/admin/leads"))
 
         with self.app.app_context():
-            deleted = Lead.query.get(lead_id)
+            deleted = db.session.get(Lead, lead_id)
             self.assertIsNone(deleted)
 
 

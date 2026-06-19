@@ -1,10 +1,13 @@
-from flask import render_template, jsonify, send_file, session, flash, redirect, request, url_for
-from sqlalchemy.exc import OperationalError, DatabaseError
-from sqlalchemy import func, or_
-from datetime import datetime, UTC
+"""Admin dashboard and lead-management routes."""
+
+import io
 import json
 import logging
-import io
+from datetime import UTC, datetime
+
+from flask import flash, jsonify, render_template, redirect, send_file, session, url_for
+from sqlalchemy import func, or_
+from sqlalchemy.exc import DatabaseError, OperationalError
 
 from app import limiter
 from app.admin import admin_bp
@@ -13,52 +16,40 @@ from app.models import Consignment, Lead, NewsletterSubscriber, db
 
 logger = logging.getLogger(__name__)
 
-LARGE_BACKUP_ROW_THRESHOLD = 10000
-
 
 @admin_bp.route("/admin/dashboard", methods=["GET"])
 @require_admin
 def dashboard():
-    """Admin dashboard – protected landing page after login."""
     return render_template("admin/dashboard.html")
 
 
 def _to_json_safe(value):
-    """Convert model values into JSON-serializable primitives."""
     if value is None:
         return None
-
     if isinstance(value, (str, int, float, bool)):
         return value
-
     if isinstance(value, datetime):
         return value.isoformat()
-
     isoformat = getattr(value, "isoformat", None)
     if callable(isoformat):
         return isoformat()
-
     return str(value)
 
 
 def _serialize_model_row(model_row, excluded_fields=None):
-    """Serialize a SQLAlchemy model instance using mapped table columns only."""
     excluded_fields = set(excluded_fields or [])
-    serialized = {}
-
+    payload = {}
     for column in model_row.__table__.columns:
         if column.name in excluded_fields:
             continue
-        serialized[column.name] = _to_json_safe(getattr(model_row, column.name))
-
-    return serialized
+        payload[column.name] = _to_json_safe(getattr(model_row, column.name))
+    return payload
 
 
 @admin_bp.route("/admin/generate-backup", methods=["GET"])
 @limiter.limit("3 per minute")
 @require_admin
 def generate_backup():
-    """Generate a one-shot JSON backup of all admin-relevant tables."""
     admin_user = session.get("admin_username") or "unknown"
     started_at = datetime.now(UTC).isoformat()
 
@@ -71,53 +62,27 @@ def generate_backup():
 
         backup_payload = {}
         table_counts = {}
-
         for table_name, model_class, excluded_fields in table_specs:
             rows = model_class.query.order_by(model_class.id.asc()).all()
             backup_payload[table_name] = [
-                _serialize_model_row(row, excluded_fields=excluded_fields)
-                for row in rows
+                _serialize_model_row(row, excluded_fields=excluded_fields) for row in rows
             ]
             table_counts[table_name] = len(rows)
-
-        total_rows = sum(table_counts.values())
-        if total_rows > LARGE_BACKUP_ROW_THRESHOLD:
-            logger.warning(
-                "Large admin backup requested by %s: total_rows=%s threshold=%s",
-                admin_user,
-                total_rows,
-                LARGE_BACKUP_ROW_THRESHOLD,
-            )
 
         backup_payload["metadata"] = {
             "generated_at": started_at,
             "generated_by": admin_user,
-            "total_rows": total_rows,
             "table_counts": table_counts,
+            "total_rows": sum(table_counts.values()),
         }
 
-        backup_json = json.dumps(backup_payload, ensure_ascii=True, indent=2)
-        buffer = io.BytesIO()
-        buffer.write(backup_json.encode("utf-8"))
+        buffer = io.BytesIO(json.dumps(backup_payload, ensure_ascii=True, indent=2).encode("utf-8"))
         buffer.seek(0)
 
         filename = f"backup_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}.json"
-
-        logger.info(
-            "Admin backup generated successfully by %s at %s (total_rows=%s)",
-            admin_user,
-            started_at,
-            total_rows,
-        )
-
-        return send_file(
-            buffer,
-            as_attachment=True,
-            download_name=filename,
-            mimetype="application/json",
-        )
-    except Exception as e:
-        logger.error("Admin backup generation failed for %s: %s", admin_user, e, exc_info=True)
+        return send_file(buffer, as_attachment=True, download_name=filename, mimetype="application/json")
+    except Exception as exc:
+        logger.error("Admin backup generation failed for %s: %s", admin_user, exc, exc_info=True)
         return jsonify({"success": False, "message": "Failed to generate backup."}), 500
 
 
@@ -139,11 +104,11 @@ def leads_panel():
             for lead in leads
         ]
         return render_template("admin/leads.html", leads=rows)
-    except (OperationalError, DatabaseError) as e:
-        logger.error("Database error loading leads panel: %s", e)
+    except (OperationalError, DatabaseError):
+        logger.exception("Database error loading leads panel")
         return render_template("admin/leads.html", leads=[], error="Unable to load leads right now.")
-    except Exception as e:
-        logger.error("Unexpected error loading leads panel: %s", e)
+    except Exception:
+        logger.exception("Unexpected error loading leads panel")
         return render_template("admin/leads.html", leads=[], error="An unexpected error occurred.")
 
 
@@ -153,19 +118,14 @@ def reject_empty_phone_leads():
     try:
         deleted_count = (
             Lead.query.filter(
-                or_(
-                    Lead.phone.is_(None),
-                    func.trim(Lead.phone) == "",
-                )
+                or_(Lead.phone.is_(None), func.trim(Lead.phone) == "")
             ).delete(synchronize_session=False)
         )
         db.session.commit()
-
         flash(f"Rejected {deleted_count} lead(s) with empty phone numbers.", "success")
-        logger.info("Rejected %s lead(s) with empty phone numbers from admin panel", deleted_count)
-    except Exception as e:
+    except Exception:
         db.session.rollback()
-        logger.error("Failed to reject blank-phone leads: %s", e, exc_info=True)
+        logger.exception("Failed to reject blank-phone leads")
         flash("Unable to reject blank-phone leads right now.", "error")
 
     return redirect(url_for("admin.leads_panel"))

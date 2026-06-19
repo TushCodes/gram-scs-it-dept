@@ -1,138 +1,116 @@
 from app import create_app
-from app.models import db, Consignment, Lead
+from app.models import Consignment, Lead, db
 from sqlalchemy.exc import IntegrityError, OperationalError
-import sys
 import logging
+import sys
 
 logger = logging.getLogger(__name__)
 
-try:
-    app = create_app()
+LOCAL_CONSIGNMENTS = [
+    {
+        "consignment_number": "LOCAL0001",
+        "status": "Pickup Scheduled",
+        "pickup_pincode": "110001",
+        "pickup_address": "Gram SCS Delhi Pickup Hub, Connaught Place, New Delhi",
+        "pickup_tag": "Delhi Hub",
+        "pickup_date": "2026-06-19",
+        "drop_pincode": "400001",
+        "drop_address": "Nariman Point Business District, Mumbai",
+        "drop_tag": "Mumbai Client",
+        "drop_date": "2026-06-22",
+        "eta": "2026-06-22 18:00",
+    },
+    {
+        "consignment_number": "LOCAL0002",
+        "status": "In Transit",
+        "pickup_pincode": "560001",
+        "pickup_address": "MG Road Fulfilment Center, Bengaluru",
+        "pickup_tag": "Bengaluru FC",
+        "pickup_date": "2026-06-17",
+        "drop_pincode": "600001",
+        "drop_address": "Chennai Port Receiving Dock, Chennai",
+        "drop_tag": "Chennai Dock",
+        "drop_date": "2026-06-20",
+        "eta": "2026-06-20 15:30",
+    },
+    {
+        "consignment_number": "LOCAL0003",
+        "status": "Out for Delivery",
+        "pickup_pincode": "411001",
+        "pickup_address": "Pune Industrial Warehouse, Pune",
+        "pickup_tag": "Pune Warehouse",
+        "pickup_date": "2026-06-16",
+        "drop_pincode": "421001",
+        "drop_address": "Ulhasnagar Retail Distribution Point, Thane",
+        "drop_tag": "Thane Retail",
+        "drop_date": "2026-06-19",
+        "eta": "2026-06-19 17:45",
+    },
+    {
+        "consignment_number": "LOCAL0004",
+        "status": "Delivered",
+        "pickup_pincode": "700001",
+        "pickup_address": "Kolkata Central Logistics Park, Kolkata",
+        "pickup_tag": "Kolkata Park",
+        "pickup_date": "2026-06-14",
+        "drop_pincode": "751001",
+        "drop_address": "Bhubaneswar Corporate Tower, Bhubaneswar",
+        "drop_tag": "Bhubaneswar HQ",
+        "drop_date": "2026-06-18",
+        "eta": "2026-06-18 11:15",
+    },
+    {
+        "consignment_number": "LOCAL0005",
+        "status": "Delayed / On Hold",
+        "pickup_pincode": "380001",
+        "pickup_address": "Ahmedabad Packaging Unit, Ahmedabad",
+        "pickup_tag": "Ahmedabad Unit",
+        "pickup_date": "2026-06-15",
+        "drop_pincode": "302001",
+        "drop_address": "Jaipur Customer Experience Center, Jaipur",
+        "drop_tag": "Jaipur CEC",
+        "drop_date": "2026-06-21",
+        "eta": "2026-06-21 12:00",
+    },
+]
 
-    with app.app_context():
+LOCAL_LEADS = [
+    Lead(name="Aarav Mehta", email="aarav.mehta@example.com", phone="+91 98765 43210", subject="Warehouse Enquiry", message="Need details for 3PL warehousing in Mumbai."),
+    Lead(name="Priya Nair", email="priya.nair@example.com", phone="+91 98111 22334", subject="Transport Partnership", message="Looking for a long-term transport partner for South India routes."),
+    Lead(name="Global Imports LLC", email="ops@globalimports.example", phone="+1 (415) 555-0198", subject="International Freight", message="Requesting a callback about import clearance and freight forwarding."),
+]
+
+
+def seed_local_data(reset=False):
+    with create_app().app_context():
         try:
-            # Clear existing data
-            logger.info("Clearing existing consignments...")
-            Consignment.query.delete()
+            if reset:
+                logger.info("Clearing existing local seed data...")
+                Consignment.query.delete()
+                Lead.query.delete()
 
-            logger.info("Clearing existing leads...")
-            Lead.query.delete()
-            
-            # Add dummy consignments
-            consignments = [
-                Consignment(
-                    consignment_number="GS-2024-001",
-                    status="In Transit",
-                    eta="2024-03-05 14:30"
-                ),
-                Consignment(
-                    consignment_number="GS-2024-002",
-                    status="Out for Delivery",
-                    eta="2024-03-04 18:00"
-                ),
-                Consignment(
-                    consignment_number="GS-2024-003",
-                    status="Delivered",
-                    eta="2024-03-03 10:00"
-                ),
-                Consignment(
-                    consignment_number="GS-2024-004",
-                    status="Pickup Scheduled",
-                    eta="2024-03-06 09:00"
-                ),
-                Consignment(
-                    consignment_number="GS-2024-005",
-                    status="In Transit",
-                    eta="2024-03-05 16:45"
-                )
-            ]
-            
-            logger.info(f"Adding {len(consignments)} dummy consignments...")
-            for consignment in consignments:
-                db.session.add(consignment)
+            existing_numbers = {row[0] for row in Consignment.query.with_entities(Consignment.consignment_number).all()}
+            consignments = [Consignment(**payload) for payload in LOCAL_CONSIGNMENTS if payload["consignment_number"] not in existing_numbers]
+            db.session.add_all(consignments)
 
-            leads = [
-                Lead(
-                    name="Aarav Mehta",
-                    email="aarav.mehta@example.com",
-                    phone="+91 98765 43210",
-                    subject="Warehouse Enquiry",
-                    message="Need details for 3PL warehousing in Mumbai.",
-                ),
-                Lead(
-                    name="Priya Nair",
-                    email="priya.nair@example.com",
-                    phone="+91 98111 22334",
-                    subject="Transport Partnership",
-                    message="Looking for a long-term transport partner for South India routes.",
-                ),
-                Lead(
-                    name="Global Imports LLC",
-                    email="ops@globalimports.example",
-                    phone="+1 (415) 555-0198",
-                    subject="International Freight",
-                    message="Requesting a callback about import clearance and freight forwarding.",
-                ),
-                Lead(
-                    name="No Phone Lead",
-                    email="nophone@example.com",
-                    phone=None,
-                    subject="Missing Phone",
-                    message="This record is intentionally missing a phone number.",
-                ),
-                Lead(
-                    name="Whitespace Phone Lead",
-                    email="whitespace@example.com",
-                    phone="   ",
-                    subject="Whitespace Phone",
-                    message="This record uses whitespace only for the phone field.",
-                ),
-                Lead(
-                    name="Short Inquiry",
-                    email="short.inquiry@example.com",
-                    phone="99999 88888",
-                    subject="Quick Question",
-                    message="Please share the contact person for contract logistics.",
-                ),
-                Lead(
-                    name="Bulk Operations Team",
-                    email="bulk.ops@example.com",
-                    phone="+91-90000-11111",
-                    subject="Bulk Dispatch",
-                    message="We need a dispatch plan for weekly high-volume shipments.",
-                ),
-            ]
-
-            logger.info(f"Adding {len(leads)} dummy leads...")
-            for lead in leads:
-                db.session.add(lead)
-            
+            existing_emails = {row[0] for row in Lead.query.with_entities(Lead.email).all()}
+            leads = [lead for lead in LOCAL_LEADS if lead.email not in existing_emails]
+            db.session.add_all(leads)
             db.session.commit()
-            logger.info(f"✓ Successfully added {len(consignments)} dummy consignments to the database")
-            logger.info(f"✓ Successfully added {len(leads)} dummy leads to the database")
-            print("\nTest with these consignment numbers:")
-            for c in consignments:
-                print(f"  - {c.consignment_number} ({c.status})")
 
-            print("\nSeeded lead email addresses:")
-            for lead in leads:
-                print(f"  - {lead.email} | phone={lead.phone!r}")
-        
-        except IntegrityError as e:
+            print(f"✓ Added {len(consignments)} local test consignments and {len(leads)} leads.")
+            print("\nTrack page test consignments:")
+            for item in LOCAL_CONSIGNMENTS:
+                print(f"  - {item['consignment_number']} ({item['status']})")
+        except (IntegrityError, OperationalError) as error:
             db.session.rollback()
-            logger.error(f"Database integrity error (duplicate data?): {e}")
+            logger.error("Database error while seeding local data: %s", error)
             sys.exit(1)
-        
-        except OperationalError as e:
+        except Exception as error:
             db.session.rollback()
-            logger.error(f"Database operational error: {e}")
-            sys.exit(1)
-        
-        except Exception as e:
-            db.session.rollback()
-            logger.error(f"Unexpected error while seeding data: {e}", exc_info=True)
+            logger.error("Unexpected error while seeding local data: %s", error, exc_info=True)
             sys.exit(1)
 
-except Exception as e:
-    logger.error(f"Failed to create application: {e}", exc_info=True)
-    sys.exit(1)
+
+if __name__ == "__main__":
+    seed_local_data(reset="--reset" in sys.argv)
