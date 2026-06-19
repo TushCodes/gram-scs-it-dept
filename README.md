@@ -34,3 +34,9 @@
 PORT=10002 python run.py
 ```
 
+`run.py` will automatically create/use the project `.venv` and install `requirements.txt` when the active Python interpreter is missing or has broken runtime dependencies such as Flask or Flask-Limiter transitive packages. You can also install dependencies manually with:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
