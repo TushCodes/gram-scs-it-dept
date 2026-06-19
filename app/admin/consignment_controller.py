@@ -567,6 +567,83 @@ def _save_pod_upload_for_row(consignment, row, errors, row_index):
     consignment.pod_image = _store_pod_bytes(filename, file_bytes, row.get("pod_file_type"))
 
 
+@admin_bp.route("/admin/consignments/<int:consignment_id>/pod", methods=["POST"], endpoint="consignment_pod_upload")
+@require_admin
+def consignment_pod_upload(consignment_id):
+    consignment = db.session.get(Consignment, consignment_id)
+    if not consignment:
+        return jsonify({"success": False, "message": "Consignment not found."}), 404
+
+    uploaded_file = request.files.get("file")
+    if not uploaded_file:
+        return jsonify({"success": False, "message": "POD file is required."}), 400
+
+    file_bytes = uploaded_file.read()
+    if len(file_bytes) > MAX_POD_IMAGE_BYTES:
+        return jsonify({"success": False, "message": "POD upload exceeds the 5 MB size limit."}), 400
+
+    try:
+        if consignment.pod_image:
+            _delete_pod_file(consignment.pod_image)
+
+        filename = _pod_storage_filename(consignment.consignment_number, uploaded_file.filename)
+        consignment.pod_image = _store_pod_bytes(filename, file_bytes, uploaded_file.mimetype)
+        db.session.commit()
+        return jsonify({"success": True, "pod_image": consignment.pod_image})
+    except Exception:
+        db.session.rollback()
+        logger.exception("Failed to upload POD for consignment %s", consignment_id)
+        return jsonify({"success": False, "message": "Failed to upload POD."}), 500
+
+
+@admin_bp.route("/admin/consignments/<int:consignment_id>/pod", methods=["GET"], endpoint="consignment_pod_download")
+@require_admin
+def consignment_pod_download(consignment_id):
+    consignment = db.session.get(Consignment, consignment_id)
+    if not consignment or not consignment.pod_image:
+        return jsonify({"success": False, "message": "No POD found."}), 404
+
+    pod_path = consignment.pod_image
+    try:
+        if isinstance(pod_path, str) and pod_path.startswith("supabase:"):
+            content_bytes, object_path = _download_supabase_pod_file(pod_path)
+            return send_file(
+                io.BytesIO(content_bytes),
+                as_attachment=True,
+                download_name=os.path.basename(object_path) or "pod.jpg",
+                mimetype="application/octet-stream",
+            )
+
+        upload_folder = os.path.join(current_app.instance_path, "uploads")
+        safe_path = os.path.normpath(os.path.join(upload_folder, pod_path))
+        if not safe_path.startswith(os.path.abspath(upload_folder)):
+            return jsonify({"success": False, "message": "Invalid POD path."}), 400
+        if not os.path.exists(safe_path):
+            return jsonify({"success": False, "message": "POD file missing."}), 404
+        return send_file(safe_path, as_attachment=True, download_name=os.path.basename(safe_path))
+    except Exception:
+        logger.exception("Failed to serve POD for consignment %s", consignment_id)
+        return jsonify({"success": False, "message": "Failed to serve POD."}), 500
+
+
+@admin_bp.route("/admin/consignments/<int:consignment_id>/pod", methods=["DELETE"], endpoint="consignment_pod_delete")
+@require_admin
+def consignment_pod_delete(consignment_id):
+    consignment = db.session.get(Consignment, consignment_id)
+    if not consignment:
+        return jsonify({"success": False, "message": "Consignment not found."}), 404
+
+    try:
+        _delete_pod_file(consignment.pod_image)
+        consignment.pod_image = None
+        db.session.commit()
+        return jsonify({"success": True})
+    except Exception:
+        db.session.rollback()
+        logger.exception("Failed to delete POD for consignment %s", consignment_id)
+        return jsonify({"success": False, "message": "Failed to delete POD."}), 500
+
+
 def _normalize_save_payload():
     if request.is_json:
         payload = request.get_json(silent=True) or {}

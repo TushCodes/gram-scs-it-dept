@@ -41,6 +41,8 @@ def _resolve_admin_password_hash() -> str:
 def _resolve_admin_username() -> str:
     return (os.environ.get("ADMIN_USERNAME") or "admin").strip() or "admin"
 
+
+ADMIN_PASSWORD_HASH: str = _resolve_admin_password_hash()
 ADMIN_SESSION_KEY = "admin_authenticated"
 ADMIN_SESSION_USERNAME_KEY = "admin_username"
 
@@ -50,12 +52,8 @@ def check_admin_credentials(username: str, password: str) -> bool:
     if username != _resolve_admin_username():
         return False
 
-    plain_password = (os.environ.get("ADMIN_PASSWORD") or "").strip()
-    if plain_password and password == plain_password:
-        return True
-
     try:
-        return check_password_hash(_resolve_admin_password_hash(), password)
+        return check_password_hash(ADMIN_PASSWORD_HASH, password)
     except Exception:
         return False
 
