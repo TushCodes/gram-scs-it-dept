@@ -105,6 +105,15 @@ from app import create_app
 app = create_app()
 
 
+def _coerce_port(raw_port, default_port):
+    raw_port = (raw_port or "").strip()
+    if ":" in raw_port:
+        raw_port = raw_port.rsplit(":", 1)[-1].strip()
+    if raw_port.isdigit() and 1 <= int(raw_port) <= 65535:
+        return int(raw_port)
+    return default_port
+
+
 def _find_available_port(start_port, host):
     for port in range(start_port, start_port + 50):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -123,8 +132,16 @@ if __name__ == "__main__":
     # Use debug mode only in development
     debug = os.getenv('FLASK_ENV') == 'development'
     host = os.getenv('HOST', '0.0.0.0')
-    requested_port = int(os.getenv('PORT', 5000))
-    port = _find_available_port(requested_port, host)
-    if port != requested_port:
-        print(f"Requested port {requested_port} was busy; using {port} instead.")
+    default_port = 5000 if debug else 10000
+    requested_port = _coerce_port(os.getenv('PORT'), default_port)
+
+    if os.getenv('PORT'):
+        # Platforms such as Render route traffic only to their assigned PORT.
+        # Never silently move to a different port in deployed environments.
+        port = requested_port
+    else:
+        port = _find_available_port(requested_port, host)
+        if port != requested_port:
+            print(f"Requested port {requested_port} was busy; using {port} instead.")
+
     app.run(host=host, port=port, debug=debug)
