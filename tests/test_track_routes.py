@@ -13,6 +13,13 @@ class FakeConsignment:
         self.drop_pincode = "110018"
         self.eta = None
         self.eta_debug_json = None
+        self.pickup_address = "Pickup address"
+        self.pickup_tag = "Origin"
+        self.pickup_date = "2026-04-01"
+        self.drop_address = "Drop address"
+        self.drop_tag = "Destination"
+        self.drop_date = "2026-04-05"
+        self.pod_image = None
 
 
 class TrackRouteTests(unittest.TestCase):
@@ -70,7 +77,7 @@ class TrackRouteTests(unittest.TestCase):
             response = self.client.post("/track", data={"consignment_number": "ABC123"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"2026-04-05 12:00", response.data)
+        self.assertIn(b'value="ABC123"', response.data)
         self.assertEqual(record.eta, "2026-04-05 12:00")
         mock_commit.assert_not_called()
         mock_logger.info.assert_any_call("Shipment found for consignment %s", "ABC123")
@@ -80,7 +87,38 @@ class TrackRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertNotIn(b'id="map"', response.data)
-        self.assertNotIn(b"track.js", response.data)
+        self.assertIn(b"track-widget.js", response.data)
+
+    def test_track_lookup_api_returns_current_project_data_shape(self):
+        record = FakeConsignment()
+        fake_query = MagicMock()
+        fake_query.filter_by.return_value.first.return_value = record
+
+        fake_model = MagicMock()
+        fake_model.query = fake_query
+
+        with patch("app.track.routes.TrackConsignment", fake_model):
+            response = self.client.get("/api/track/abc123")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["data"]["consignment_number"], "ABC123")
+        self.assertEqual(payload["data"]["pickup_address"], "Pickup address")
+        self.assertFalse(payload["data"]["pod_image"])
+
+    def test_track_lookup_api_returns_404_for_missing_consignment(self):
+        fake_query = MagicMock()
+        fake_query.filter_by.return_value.first.return_value = None
+
+        fake_model = MagicMock()
+        fake_model.query = fake_query
+
+        with patch("app.track.routes.TrackConsignment", fake_model):
+            response = self.client.get("/api/track/MISSING1")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("Consignment not found", response.get_json()["message"])
 
 
 if __name__ == "__main__":
