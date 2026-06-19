@@ -5,6 +5,7 @@ from .models import db
 from cachelib import FileSystemCache
 from functools import wraps
 import hashlib
+import importlib
 import os
 import logging
 from sqlalchemy import text
@@ -130,6 +131,10 @@ def _should_auto_create_tables():
             logger.warning('Ignoring AUTO_CREATE_TABLES in production; manage schema externally.')
         return False
 
+    database_url = os.getenv('DATABASE_URL', '').strip()
+    if not database_url or database_url.startswith('sqlite://'):
+        return True
+
     return _env_bool('AUTO_CREATE_TABLES', default=True)
 
 
@@ -185,6 +190,15 @@ def _normalize_postgres_uri(raw_uri):
         raw_uri = urlunparse(parsed)
 
     return raw_uri
+
+
+def _postgres_driver_is_available():
+    try:
+        importlib.import_module('psycopg2')
+    except Exception as exc:
+        logger.warning('PostgreSQL driver is unavailable: %s', exc)
+        return False
+    return True
 
 
 def _seed_development_consignment_data():
@@ -301,6 +315,14 @@ def create_app():
 
     # DATABASE CONFIG
     db_uri = _require_database_uri()
+    if (
+        db_uri.startswith('postgresql://')
+        and os.getenv('FLASK_ENV', '').strip().lower() != 'production'
+        and not _postgres_driver_is_available()
+    ):
+        logger.warning('Falling back to local SQLite because PostgreSQL driver could not be loaded.')
+        db_uri = _default_local_sqlite_uri()
+
     app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['SESSION_COOKIE_HTTPONLY'] = True
