@@ -1,12 +1,16 @@
 """Admin consignment management routes and helpers."""
 
+import base64
+import binascii
 import io
 import logging
 import os
 import re
+from uuid import uuid4
 
 from flask import current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
 from openpyxl import Workbook, load_workbook
+from werkzeug.utils import secure_filename
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.pdfgen import canvas
 from sqlalchemy import or_
@@ -476,16 +480,196 @@ def consignments_export_pdf():
     return send_file(buffer, as_attachment=True, download_name="consignments.pdf", mimetype="application/pdf")
 
 
-@admin_bp.route("/admin/consignments/save", methods=["POST"], endpoint="consignments_save")
-@require_admin
-def consignments_save():
+CONSIGNMENT_SAVE_FIELDS = (
+    "consignment_number",
+    "status",
+    "pickup_pincode",
+    "pickup_address",
+    "pickup_tag",
+    "pickup_date",
+    "drop_pincode",
+    "drop_address",
+    "drop_tag",
+    "drop_date",
+    "eta",
+)
+
+
+def _decode_pod_data_url(data_url):
+    if not isinstance(data_url, str) or not data_url.strip():
+        return None
+
+    value = data_url.strip()
+    if value.startswith("data:"):
+        header, separator, encoded = value.partition(",")
+        if not separator or ";base64" not in header.lower():
+            raise ValueError("POD upload must be a base64 data URL.")
+    else:
+        encoded = value
+
+    try:
+        return base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("POD upload data is invalid.") from exc
+
+
+def _pod_storage_filename(consignment_number, original_name):
+    safe_original = secure_filename(original_name or "pod-upload") or "pod-upload"
+    _, ext = os.path.splitext(safe_original)
+    if not ext:
+        ext = ".bin"
+    return f"{secure_filename(consignment_number) or 'consignment'}-{uuid4().hex}{ext.lower()}"
+
+
+def _apply_consignment_payload(consignment, row):
+    for field in CONSIGNMENT_SAVE_FIELDS:
+        value = row.get(field)
+        if value is None:
+            value = ""
+        if isinstance(value, str):
+            value = value.strip()
+        setattr(consignment, field, value)
+
+
+def _save_pod_upload_for_row(consignment, row, errors, row_index):
+    pod_data = row.get("pod_file_data")
+    if not pod_data:
+        pod_image = (row.get("pod_image") or "").strip() if isinstance(row.get("pod_image"), str) else row.get("pod_image")
+        if _is_external_pod_url(pod_image):
+            errors.append({
+                "index": row_index,
+                "field": "pod_image",
+                "message": "External POD URLs cannot be saved. Upload the POD file instead.",
+            })
+        return
+
+    try:
+        file_bytes = _decode_pod_data_url(pod_data)
+    except ValueError as exc:
+        errors.append({"index": row_index, "field": "pod_file_data", "message": str(exc)})
+        return
+
+    if not file_bytes:
+        return
+
+    if len(file_bytes) > MAX_POD_IMAGE_BYTES:
+        errors.append({
+            "index": row_index,
+            "field": "pod_file_data",
+            "message": "POD upload exceeds the 5 MB size limit.",
+        })
+        return
+
+    if consignment.pod_image:
+        _delete_pod_file(consignment.pod_image)
+
+    filename = _pod_storage_filename(consignment.consignment_number, row.get("pod_file_name"))
+    consignment.pod_image = _store_pod_bytes(filename, file_bytes, row.get("pod_file_type"))
+
+
+def _normalize_save_payload():
     if request.is_json:
         payload = request.get_json(silent=True) or {}
     else:
         payload = request.form.to_dict(flat=True)
 
-    consignment_number = (payload.get("consignment_number") or "").strip()
-    if not consignment_number:
-        return jsonify({"success": False, "message": "Consignment number is required."}), 400
+    if isinstance(payload.get("rows"), list):
+        return payload
 
-    return jsonify({"success": True, "message": "Saved."})
+    # Backwards-compatible single-row payload support.
+    if payload.get("consignment_number") or payload.get("id"):
+        return {"rows": [payload], "deleted_ids": []}
+
+    return payload
+
+
+@admin_bp.route("/admin/consignments/save", methods=["POST"], endpoint="consignments_save")
+@require_admin
+def consignments_save():
+    payload = _normalize_save_payload()
+    rows = payload.get("rows") if isinstance(payload, dict) else None
+    deleted_ids = payload.get("deleted_ids", []) if isinstance(payload, dict) else []
+
+    if not isinstance(rows, list):
+        return jsonify({"success": False, "message": "Rows payload is required."}), 400
+
+    errors = []
+    saved_count = 0
+    deleted_count = 0
+
+    try:
+        for deleted_id in deleted_ids if isinstance(deleted_ids, list) else []:
+            try:
+                deleted_id_int = int(deleted_id)
+            except (TypeError, ValueError):
+                continue
+            consignment = db.session.get(Consignment, deleted_id_int)
+            if consignment:
+                _delete_pod_file(consignment.pod_image)
+                db.session.delete(consignment)
+                deleted_count += 1
+
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict):
+                errors.append({"index": index, "field": "row", "message": "Row must be an object."})
+                continue
+
+            consignment_number = (row.get("consignment_number") or "").strip().upper()
+            if not consignment_number:
+                errors.append({
+                    "index": index,
+                    "field": "consignment_number",
+                    "message": "Consignment number is required.",
+                })
+                continue
+
+            row = dict(row)
+            row["consignment_number"] = consignment_number
+
+            consignment = None
+            row_id = row.get("id")
+            if row_id not in (None, ""):
+                try:
+                    consignment = db.session.get(Consignment, int(row_id))
+                except (TypeError, ValueError):
+                    errors.append({"index": index, "field": "id", "message": "Invalid consignment id."})
+                    continue
+
+            existing_by_number = Consignment.query.filter_by(consignment_number=consignment_number).first()
+            if consignment and existing_by_number and existing_by_number.id != consignment.id:
+                errors.append({
+                    "index": index,
+                    "field": "consignment_number",
+                    "message": "Consignment number already exists.",
+                })
+                continue
+
+            if not consignment:
+                consignment = existing_by_number or Consignment()
+                if not existing_by_number:
+                    db.session.add(consignment)
+
+            _apply_consignment_payload(consignment, row)
+            _save_pod_upload_for_row(consignment, row, errors, index)
+            saved_count += 1
+
+        if errors:
+            db.session.rollback()
+            return jsonify({
+                "success": False,
+                "message": "Validation errors. Please fix highlighted rows.",
+                "errors": errors,
+            }), 400
+
+        db.session.commit()
+        return jsonify({
+            "success": True,
+            "message": "Saved.",
+            "saved_count": saved_count,
+            "deleted_count": deleted_count,
+            "total": Consignment.query.count(),
+        })
+    except Exception:
+        db.session.rollback()
+        logger.exception("Failed to save consignments")
+        return jsonify({"success": False, "message": "Failed to save consignments."}), 500
