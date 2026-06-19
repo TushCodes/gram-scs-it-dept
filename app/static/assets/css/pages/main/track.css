@@ -10,7 +10,7 @@
     --track-warning: #f59e0b;
     --track-danger: #dc3545;
     --track-shadow: 0 24px 60px rgba(17, 24, 39, 0.12);
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: 'Inter', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
     color: var(--track-ink);
     border-radius: 28px;
     overflow: hidden;
@@ -59,8 +59,8 @@
     margin-bottom: 0.4rem;
     color: var(--track-muted);
     font-size: 0.73rem;
-    font-weight: 800;
-    letter-spacing: 0.14em;
+    font-weight: 700;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
 }
 
@@ -72,10 +72,10 @@
 .track-title {
     max-width: 760px;
     margin: 0 0 0.7rem;
-    font-size: clamp(2rem, 4.6vw, 4rem);
-    font-weight: 800;
-    line-height: 1.02;
-    letter-spacing: -0.05em;
+    font-size: clamp(2rem, 4vw, 3.6rem);
+    font-weight: 700;
+    line-height: 1.08;
+    letter-spacing: -0.02em;
 }
 
 .track-subtitle {
@@ -188,8 +188,8 @@
 .shipment-number {
     margin: 0;
     font-size: clamp(1.45rem, 3vw, 2.25rem);
-    font-weight: 800;
-    letter-spacing: -0.03em;
+    font-weight: 700;
+    letter-spacing: -0.01em;
 }
 
 .shipment-status-block {
@@ -520,7 +520,7 @@
 
 /* Standalone page helpers. Remove if you embed .track-shell in an existing layout. */
 * { box-sizing: border-box; }
-body { margin: 0; background: #eef1f5; color: #17202a; font-family: 'Space Grotesk', sans-serif; }
+body { margin: 0; background: #eef1f5; color: #17202a; font-family: 'Inter', 'Roboto', 'Helvetica Neue', Arial, sans-serif; }
 .track-page { width: min(1180px, calc(100% - 24px)); margin: 24px auto; }
 .track-input { width: 100%; outline: none; }
 .track-btn, .pod-btn { cursor: pointer; font-family: inherit; }
