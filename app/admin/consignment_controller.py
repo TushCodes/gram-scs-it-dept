@@ -2,6 +2,7 @@
 
 import base64
 import binascii
+from datetime import date, datetime
 import io
 import logging
 import os
@@ -184,6 +185,24 @@ def _is_external_pod_url(value):
 
 def _normalize_header(value):
     return re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")
+
+
+def _parse_date_string(value):
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if not isinstance(value, str):
+        return None
+
+    value = value.strip()
+    if not value:
+        return None
+
+    try:
+        return datetime.strptime(value[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
 
 
 def _serialize_consignment(consignment):
