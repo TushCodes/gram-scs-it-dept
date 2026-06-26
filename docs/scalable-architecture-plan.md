@@ -2,16 +2,16 @@
 
 ## Plain-language summary
 
-This plan is about tidying the project so it can grow without becoming harder to maintain. Today, several parts of the site are stored together even though they do different jobs: public website pages, shipment tracking, admin screens, database work, scripts, tests, and deployment files. The plan keeps the same application, but gives every major area its own clearly labeled place.
+This plan is about reorganizing the project so each major business area can grow on its own. Today, several parts of the site are stored together even though they do different jobs: public website pages, shipment tracking, admin screens, database work, scripts, tests, and deployment files. The target structure separates those areas into independent modules with clear shared libraries, so the team can later deploy or scale the busiest parts separately if needed.
 
 In simple terms, the final project should feel like a well-organized office:
 
 - Website pages go in the website area.
 - Shipment tracking goes in the tracking area.
 - Admin tools go in the admin area.
-- Shared setup, security, health checks, and error handling go in a common platform area.
-- Database, storage, cache, and outside-service connections go in an infrastructure area.
-- Tests, contracts, operations scripts, deployment files, and documentation each get their own predictable folders.
+- Shared setup, security, health checks, and error handling go in a platform area.
+- Database, storage, cache, and outside-service connections go in reusable infrastructure packages.
+- Each major area gets its own tests and API contracts, while operations scripts, deployment files, and documentation each get predictable folders.
 
 The plan also recommends doing the work in small safe steps, starting with internal cleanup that should not change what customers or admins see. After each step, the existing tests should be run so the team can confirm the site still behaves the same.
 
@@ -52,151 +52,170 @@ This repository is a Flask web application for Gram SCS IT Department with publi
 
 ## 3. Target architecture principles
 
-The conversion should move toward a modular monolith first. This is the safest scalable architecture for the current repository because it preserves one deployable Flask application while separating responsibilities enough to support future services if needed.
+The conversion should move toward a modular, service-ready architecture instead of a monolithic tree. The first step can still run as one Flask deployment for safety, but the folder boundaries should be shaped as if website, tracking, admin, and API capabilities may later become independently deployed services.
 
 Core principles:
 
-- **Feature-first modules:** group code by business capability, not by technical type only.
+- **Service-ready feature boundaries:** group code by independently scalable business capability, not by technical type only.
 - **Thin controllers:** Flask routes validate HTTP input/output and delegate to application services.
 - **Domain/application separation:** business decisions live outside Flask request handlers.
-- **Infrastructure isolation:** database, cache, rate limiting, file storage, config, and external HTTP clients are behind dedicated modules.
+- **Reusable infrastructure packages:** database, cache, rate limiting, file storage, config, and external HTTP clients are behind shared adapters that services can reuse.
 - **Single template convention:** either global templates by feature or blueprint-owned templates, but not an accidental mix.
-- **Versioned APIs and contracts:** public/admin JSON endpoints should be structured under versioned API modules.
+- **Versioned APIs and contracts:** website, tracking, and admin APIs should expose versioned contracts so they can evolve independently.
 - **Operational code separated from app code:** migrations, maintenance jobs, and one-off scripts should live under predictable operations folders.
 - **Test mirrors source boundaries:** tests should map to unit, integration, contract, and E2E layers.
 
 ## 4. Final folder architecture
 
-The proposed final structure is below. It is intentionally designed as a modular Flask monolith with clear boundaries.
+The proposed final structure is below. It is designed as a modular, service-ready path tree: each business capability has its own application boundary, while shared packages hold reusable platform and infrastructure code.
 
 ```text
 .
-├── app/
-│   ├── __init__.py
-│   ├── factory.py
-│   ├── extensions.py
-│   ├── config/
+├── apps/
+│   ├── web/
 │   │   ├── __init__.py
-│   │   ├── base.py
-│   │   ├── development.py
-│   │   ├── production.py
-│   │   ├── testing.py
-│   │   └── database.py
-│   ├── core/
+│   │   ├── factory.py
+│   │   ├── routes.py
+│   │   ├── templates/
+│   │   │   ├── layouts/
+│   │   │   ├── pages/
+│   │   │   ├── partials/
+│   │   │   └── website/
+│   │   └── static/
+│   │       ├── assets/
+│   │       │   ├── fonts/
+│   │       │   ├── images/
+│   │       │   └── vendor/
+│   │       ├── css/
+│   │       │   ├── base/
+│   │       │   ├── components/
+│   │       │   ├── layouts/
+│   │       │   ├── pages/
+│   │       │   ├── themes/
+│   │       │   └── utilities/
+│   │       └── js/
+│   │           ├── components/
+│   │           ├── pages/
+│   │           └── shared/
+│   ├── admin/
 │   │   ├── __init__.py
+│   │   ├── factory.py
+│   │   ├── routes.py
+│   │   ├── templates/
+│   │   │   └── admin/
+│   │   └── static/
+│   │       ├── css/
+│   │       └── js/
+│   ├── tracking/
+│   │   ├── __init__.py
+│   │   ├── factory.py
+│   │   ├── routes.py
+│   │   ├── api.py
+│   │   ├── templates/
+│   │   │   └── tracking/
+│   │   └── static/
+│   │       ├── css/
+│   │       └── js/
+│   └── api_gateway/
+│       ├── __init__.py
+│       ├── factory.py
+│       ├── routes.py
+│       └── v1/
+│           ├── __init__.py
+│           ├── admin.py
+│           ├── consignments.py
+│           ├── tracking.py
+│           └── website.py
+├── services/
+│   ├── admin/
+│   │   ├── __init__.py
+│   │   ├── auth/
+│   │   │   ├── __init__.py
+│   │   │   ├── policies.py
+│   │   │   └── service.py
+│   │   ├── backups/
+│   │   │   ├── __init__.py
+│   │   │   └── service.py
+│   │   ├── consignments/
+│   │   │   ├── __init__.py
+│   │   │   ├── models.py
+│   │   │   ├── repository.py
+│   │   │   ├── schemas.py
+│   │   │   └── service.py
+│   │   └── leads/
+│   │       ├── __init__.py
+│   │       ├── repository.py
+│   │       └── service.py
+│   ├── tracking/
+│   │   ├── __init__.py
+│   │   ├── models.py
+│   │   ├── pod_service.py
+│   │   ├── repository.py
+│   │   ├── schemas.py
+│   │   └── service.py
+│   ├── website/
+│   │   ├── __init__.py
+│   │   ├── contact/
+│   │   │   ├── __init__.py
+│   │   │   ├── models.py
+│   │   │   ├── repository.py
+│   │   │   ├── schemas.py
+│   │   │   └── service.py
+│   │   ├── newsletter/
+│   │   │   ├── __init__.py
+│   │   │   ├── models.py
+│   │   │   ├── repository.py
+│   │   │   ├── schemas.py
+│   │   │   └── service.py
+│   │   └── pages/
+│   │       ├── __init__.py
+│   │       └── registry.py
+│   └── logistics/
+│       ├── __init__.py
+│       ├── eta.py
+│       └── routing.py
+├── packages/
+│   ├── platform/
+│   │   ├── __init__.py
+│   │   ├── app_factory.py
+│   │   ├── config/
+│   │   │   ├── __init__.py
+│   │   │   ├── base.py
+│   │   │   ├── database.py
+│   │   │   ├── development.py
+│   │   │   ├── production.py
+│   │   │   └── testing.py
 │   │   ├── errors.py
 │   │   ├── health.py
 │   │   ├── logging.py
 │   │   ├── rate_limits.py
 │   │   ├── security_headers.py
 │   │   └── startup.py
-│   ├── common/
-│   │   ├── __init__.py
-│   │   ├── constants.py
-│   │   ├── datetime.py
-│   │   ├── pagination.py
-│   │   ├── responses.py
-│   │   ├── validation.py
-│   │   └── serialization.py
 │   ├── infrastructure/
 │   │   ├── __init__.py
-│   │   ├── database/
-│   │   │   ├── __init__.py
-│   │   │   ├── models.py
-│   │   │   ├── migrations.py
-│   │   │   └── maintenance.py
 │   │   ├── cache/
 │   │   │   ├── __init__.py
 │   │   │   └── filesystem_cache.py
-│   │   ├── storage/
+│   │   ├── database/
 │   │   │   ├── __init__.py
-│   │   │   ├── pod_storage.py
-│   │   │   └── local_storage.py
-│   │   └── http/
+│   │   │   ├── extensions.py
+│   │   │   ├── maintenance.py
+│   │   │   └── migrations.py
+│   │   ├── http/
+│   │   │   ├── __init__.py
+│   │   │   └── client.py
+│   │   └── storage/
 │   │       ├── __init__.py
-│   │       └── client.py
-│   ├── modules/
-│   │   ├── __init__.py
-│   │   ├── admin/
-│   │   │   ├── __init__.py
-│   │   │   ├── routes.py
-│   │   │   ├── auth/
-│   │   │   │   ├── __init__.py
-│   │   │   │   ├── decorators.py
-│   │   │   │   ├── routes.py
-│   │   │   │   └── service.py
-│   │   │   ├── consignments/
-│   │   │   │   ├── __init__.py
-│   │   │   │   ├── routes.py
-│   │   │   │   ├── schemas.py
-│   │   │   │   ├── service.py
-│   │   │   │   └── repository.py
-│   │   │   ├── leads/
-│   │   │   │   ├── __init__.py
-│   │   │   │   ├── routes.py
-│   │   │   │   ├── service.py
-│   │   │   │   └── repository.py
-│   │   │   └── backups/
-│   │   │       ├── __init__.py
-│   │   │       ├── routes.py
-│   │   │       └── service.py
-│   │   ├── tracking/
-│   │   │   ├── __init__.py
-│   │   │   ├── routes.py
-│   │   │   ├── api.py
-│   │   │   ├── schemas.py
-│   │   │   ├── service.py
-│   │   │   ├── repository.py
-│   │   │   └── models.py
-│   │   ├── website/
-│   │   │   ├── __init__.py
-│   │   │   ├── routes.py
-│   │   │   ├── pages.py
-│   │   │   ├── contact/
-│   │   │   │   ├── __init__.py
-│   │   │   │   ├── routes.py
-│   │   │   │   ├── service.py
-│   │   │   │   ├── repository.py
-│   │   │   │   └── schemas.py
-│   │   │   └── newsletter/
-│   │   │       ├── __init__.py
-│   │   │       ├── routes.py
-│   │   │       ├── service.py
-│   │   │       ├── repository.py
-│   │   │       └── schemas.py
-│   │   └── api/
-│   │       ├── __init__.py
-│   │       └── v1/
-│   │           ├── __init__.py
-│   │           ├── routes.py
-│   │           ├── consignments.py
-│   │           └── tracking.py
-│   ├── templates/
-│   │   ├── admin/
-│   │   ├── errors/
-│   │   ├── layouts/
-│   │   ├── pages/
-│   │   ├── partials/
-│   │   ├── tracking/
-│   │   └── website/
-│   └── static/
-│       ├── assets/
-│       │   ├── images/
-│       │   ├── fonts/
-│       │   └── vendor/
-│       ├── css/
-│       │   ├── base/
-│       │   ├── components/
-│       │   ├── layouts/
-│       │   ├── pages/
-│       │   ├── themes/
-│       │   └── utilities/
-│       └── js/
-│           ├── admin/
-│           ├── components/
-│           ├── pages/
-│           ├── tracking/
-│           └── shared/
+│   │       ├── local_storage.py
+│   │       └── pod_storage.py
+│   └── common/
+│       ├── __init__.py
+│       ├── constants.py
+│       ├── datetime.py
+│       ├── pagination.py
+│       ├── responses.py
+│       ├── serialization.py
+│       └── validation.py
 ├── migrations/
 │   ├── versions/
 │   └── README.md
@@ -209,26 +228,38 @@ The proposed final structure is below. It is intentionally designed as a modular
 │   ├── sql/
 │   └── seeds/
 ├── contracts/
+│   ├── admin/
 │   ├── openapi/
-│   └── jsonschema/
+│   ├── tracking/
+│   └── website/
 ├── docs/
 │   ├── architecture/
+│   ├── decisions/
 │   ├── deployment/
-│   ├── runbooks/
-│   └── decisions/
+│   └── runbooks/
 ├── tests/
-│   ├── unit/
-│   ├── integration/
-│   ├── contract/
+│   ├── admin/
+│   │   ├── unit/
+│   │   └── integration/
+│   ├── tracking/
+│   │   ├── unit/
+│   │   ├── integration/
+│   │   └── contract/
+│   ├── website/
+│   │   ├── unit/
+│   │   └── integration/
 │   ├── e2e/
 │   └── fixtures/
 ├── deploy/
+│   ├── admin/
+│   ├── api_gateway/
 │   ├── render.yaml
-│   ├── Procfile
-│   └── gunicorn.conf.py
+│   ├── tracking/
+│   ├── web/
+│   └── worker/
 ├── tools/
-│   ├── playwright/
-│   └── local-dev/
+│   ├── local-dev/
+│   └── playwright/
 ├── instance/
 ├── run.py
 ├── requirements.txt
@@ -246,87 +277,87 @@ The proposed final structure is below. It is intentionally designed as a modular
 
 | Current file | Final location | Final purpose |
 | --- | --- | --- |
-| `app/__init__.py` | `app/__init__.py` + `app/factory.py` | Keep `create_app` import-compatible in `app/__init__.py`; move app creation and blueprint registration to `factory.py`. |
-| `app/config.py` | `app/config/base.py`, `app/config/development.py`, `app/config/production.py`, `app/config/testing.py` | Split environment-specific configuration. |
-| Database URI helpers in `app/__init__.py` | `app/config/database.py` | Own database URL normalization, production validation, SQLite fallback, and SQLAlchemy engine options. |
-| `CacheShim` in `app/__init__.py` | `app/infrastructure/cache/filesystem_cache.py` | Keep cache implementation isolated. |
-| `db`, `limiter`, `cache` globals | `app/extensions.py` | Central extension registry for Flask-SQLAlchemy, Flask-Limiter, and cache. |
-| Security header functions in `app/__init__.py` | `app/core/security_headers.py` | Register security headers through a dedicated bootstrap function. |
-| Health routes in `app/__init__.py` | `app/core/health.py` | Dedicated health blueprint. |
-| Error handlers in `app/__init__.py` | `app/core/errors.py` | Dedicated error registration module. |
-| Development seed function in `app/__init__.py` | `operations/seeds/development_consignments.py` or `app/core/startup.py` | Make seeding explicit and reusable. |
-| `app/db_maintenance.py` | `app/infrastructure/database/maintenance.py` | Database schema repair/maintenance utilities. |
+| `app/__init__.py` | `run.py` + `apps/web/factory.py` initially, with optional `apps/admin/factory.py`, `apps/tracking/factory.py`, and `apps/api_gateway/factory.py` later | Keep `create_app` compatibility through `run.py` first; move app creation into app-specific factories so web, admin, tracking, and API can later run separately. |
+| `app/config.py` | `packages/platform/config/base.py`, `development.py`, `production.py`, and `testing.py` | Split environment-specific configuration into reusable platform config. |
+| Database URI helpers in `app/__init__.py` | `packages/platform/config/database.py` | Own database URL normalization, production validation, SQLite fallback, and SQLAlchemy engine options. |
+| `CacheShim` in `app/__init__.py` | `packages/infrastructure/cache/filesystem_cache.py` | Keep cache implementation isolated. |
+| `db`, `limiter`, `cache` globals | `packages/infrastructure/database/extensions.py` | Shared extension registry that each app boundary can import without depending on one global application package. |
+| Security header functions in `app/__init__.py` | `packages/platform/security_headers.py` | Register security headers through a dedicated bootstrap function. |
+| Health routes in `app/__init__.py` | `packages/platform/health.py` | Reusable health blueprint for each deployable app boundary. |
+| Error handlers in `app/__init__.py` | `packages/platform/errors.py` | Dedicated error registration module. |
+| Development seed function in `app/__init__.py` | `operations/seeds/development_consignments.py` or `packages/platform/startup.py` | Make seeding explicit and reusable. |
+| `app/db_maintenance.py` | `packages/infrastructure/database/maintenance.py` | Database schema repair/maintenance utilities. |
 
 ### 5.2 Domain models and persistence
 
 | Current file | Final location | Final purpose |
 | --- | --- | --- |
-| `app/models.py` | `app/infrastructure/database/models.py` initially | Temporary compatibility aggregate that imports domain models during transition. |
-| `Consignment` model | `app/modules/tracking/models.py` or `app/modules/admin/consignments/models.py` | Consignment persistence model owned by the shipping/tracking domain. |
-| `Lead` model | `app/modules/website/contact/models.py` | Contact lead persistence. |
-| `NewsletterSubscriber` model | `app/modules/website/newsletter/models.py` | Newsletter persistence. |
-| `app/frontend/routes/track/models.py` | Merge into `app/modules/tracking/models.py` | Remove separate track model wrapper if it duplicates `Consignment`. |
+| `app/models.py` | `packages/infrastructure/database/models.py` initially | Temporary compatibility aggregate only during transition; final model ownership belongs to service packages. |
+| `Consignment` model | `services/tracking/models.py` or `services/admin/consignments/models.py` | Consignment persistence model owned by tracking/admin consignment services, not by route packages. |
+| `Lead` model | `services/website/contact/models.py` | Contact lead persistence. |
+| `NewsletterSubscriber` model | `services/website/newsletter/models.py` | Newsletter persistence. |
+| `app/frontend/routes/track/models.py` | Merge into `services/tracking/models.py` | Remove separate track model wrapper if it duplicates `Consignment`. |
 
 ### 5.3 Admin module
 
 | Current file | Final location | Final purpose |
 | --- | --- | --- |
-| `app/admin/__init__.py` | `app/modules/admin/__init__.py` | Admin blueprint/module registration. |
-| `app/admin/auth.py` | `app/modules/admin/auth/decorators.py` + `app/modules/admin/auth/service.py` | Split request decorators from authentication decisions. |
-| `app/admin/auth_routes.py` | `app/modules/admin/auth/routes.py` | Admin login/logout routes. |
-| `app/admin/routes.py` | `app/modules/admin/routes.py`, `app/modules/admin/leads/routes.py`, `app/modules/admin/backups/routes.py` | Split dashboard, leads, and backup endpoints. |
-| `app/admin/consignment_controller.py` | `app/modules/admin/consignments/routes.py`, `service.py`, `repository.py`, `schemas.py` | Move persistence, validation, serialization, import/export, archive, and POD logic out of one controller. |
-| `app/templates/admin/*` | `app/templates/admin/*` | Keep admin templates grouped under final global template structure. |
-| `app/static/js/admin/*` | `app/static/js/admin/*` | Keep admin JavaScript grouped by admin feature. |
+| `app/admin/__init__.py` | `apps/admin/__init__.py` + `services/admin/__init__.py` | Admin application boundary and admin service package registration. |
+| `app/admin/auth.py` | `apps/admin/auth/decorators.py` + `services/admin/auth/service.py` | Split request decorators from authentication decisions. |
+| `app/admin/auth_routes.py` | `apps/admin/routes.py` or `apps/admin/auth/routes.py` | Admin login/logout routes. |
+| `app/admin/routes.py` | `apps/admin/routes.py`, with business logic in `services/admin/leads/` and `services/admin/backups/` | Split dashboard, leads, and backup endpoints. |
+| `app/admin/consignment_controller.py` | `apps/admin/routes.py`, `services/admin/consignments/service.py`, `repository.py`, and `schemas.py` | Move persistence, validation, serialization, import/export, archive, and POD logic out of one controller. |
+| `app/templates/admin/*` | `apps/admin/templates/admin/*` | Keep admin templates grouped under the admin app boundary. |
+| `app/static/js/admin/*` | `apps/admin/static/js/*` | Keep admin JavaScript grouped by admin feature. |
 
 ### 5.4 Public website module
 
 | Current file | Final location | Final purpose |
 | --- | --- | --- |
-| `app/frontend/routes/main/routes.py` | `app/modules/website/routes.py`, `app/modules/website/contact/routes.py`, `app/modules/website/newsletter/routes.py` | Split home/contact/newsletter endpoints. |
-| `app/frontend/routes/pages/routes.py` | `app/modules/website/pages.py` | Dynamic marketing page renderer with allowlist or page registry. |
-| `app/frontend/routes/main/templates/main/index.html` | `app/templates/website/index.html` | Home page. |
-| `app/frontend/routes/main/templates/main/leads.html` | Review and move to `app/templates/admin/leads.html` or remove if duplicate | Lead display should be admin-owned, not public website-owned. |
-| `app/frontend/routes/main/templates/main/consignments.html` | Review and move to `app/templates/admin/consignments.html` or remove if duplicate | Consignment management should be admin-owned. |
-| `app/frontend/routes/pages/templates/pages/*` | `app/templates/pages/*` | Marketing service pages. |
-| `app/templates/main/*` | Consolidate into `app/templates/website/*` or remove duplicates | Avoid two competing `main/index.html` and `about.html` locations. |
-| `app/templates/partials/*` | `app/templates/partials/*` | Shared partials stay global. |
-| `app/templates/layouts/*` | `app/templates/layouts/*` | Shared layouts stay global. |
+| `app/frontend/routes/main/routes.py` | `apps/web/routes.py`, with business logic in `services/website/contact/` and `services/website/newsletter/` | Split website endpoints from contact/newsletter business services. |
+| `app/frontend/routes/pages/routes.py` | `services/website/pages/registry.py` plus `apps/web/routes.py` | Dynamic marketing page renderer with allowlist or page registry. |
+| `app/frontend/routes/main/templates/main/index.html` | `apps/web/templates/website/index.html` | Home page. |
+| `app/frontend/routes/main/templates/main/leads.html` | Review and move to `apps/admin/templates/admin/leads.html` or remove if duplicate | Lead display should be admin-owned, not public website-owned. |
+| `app/frontend/routes/main/templates/main/consignments.html` | Review and move to `apps/admin/templates/admin/consignments.html` or remove if duplicate | Consignment management should be admin-owned. |
+| `app/frontend/routes/pages/templates/pages/*` | `apps/web/templates/pages/*` | Marketing service pages. |
+| `app/templates/main/*` | Consolidate into `apps/web/templates/website/*` or remove duplicates | Avoid two competing `main/index.html` and `about.html` locations. |
+| `app/templates/partials/*` | `apps/web/templates/partials/*` | Shared website partials move with the web app boundary. |
+| `app/templates/layouts/*` | `apps/web/templates/layouts/*` | Shared website layouts move with the web app boundary. |
 
 ### 5.5 Tracking module
 
 | Current file | Final location | Final purpose |
 | --- | --- | --- |
-| `app/frontend/routes/track/routes.py` | `app/modules/tracking/routes.py`, `app/modules/tracking/api.py`, `service.py`, `repository.py`, `schemas.py` | Split page route, JSON API, POD response, validation, and DB access. |
-| `app/frontend/routes/track/templates/track/track.html` | `app/templates/tracking/track.html` | Tracking page template. |
+| `app/frontend/routes/track/routes.py` | `apps/tracking/routes.py`, `apps/tracking/api.py`, `services/tracking/service.py`, `repository.py`, and `schemas.py` | Split page route, JSON API, POD response, validation, and DB access. |
+| `app/frontend/routes/track/templates/track/track.html` | `apps/tracking/templates/tracking/track.html` | Tracking page template. |
 | `track/index.html`, `track/track.css`, `track/track.js` | `docs/architecture/tracking-prototype/` during migration, then remove or merge into app templates/static assets | Preserve as reference only while migrating. |
 | `track/api-contract.json` | `contracts/jsonschema/tracking-api-contract.json` or `contracts/openapi/tracking.yaml` | Tracking API contract. |
 | `track/backend/*` | `docs/architecture/tracking-prototype/backend-examples/` or remove after migration | Example adapters should not remain production source. |
-| `app/static/js/track*.js` | `app/static/js/tracking/` | Tracking JavaScript grouped by feature. |
-| `app/static/assets/css/pages/main/track.css` | `app/static/css/pages/tracking/track.css` | Tracking CSS grouped by page. |
+| `app/static/js/track*.js` | `apps/tracking/static/js/` | Tracking JavaScript owned by the tracking app boundary. |
+| `app/static/assets/css/pages/main/track.css` | `apps/tracking/static/css/track.css` | Tracking CSS owned by the tracking app boundary. |
 
 ### 5.6 Services and infrastructure
 
 | Current file | Final location | Final purpose |
 | --- | --- | --- |
-| `app/services/logistics.py` | `app/modules/tracking/service.py` or `app/modules/admin/consignments/service.py` | Move logistics calculations to the module that owns them; keep pure functions testable. |
-| `app/services/pod_reingest_reporting.py` | `app/modules/admin/consignments/pod_reingest.py` or `operations/scripts/reingest/` | POD reingest reporting is an admin/ops concern. |
-| External `requests` usage in routes | `app/infrastructure/http/client.py` and module services | Keep external HTTP concerns outside controllers. |
-| Local POD filesystem logic | `app/infrastructure/storage/pod_storage.py` | One storage abstraction for local files now and object storage later. |
+| `app/services/logistics.py` | `services/tracking/service.py` or `services/admin/consignments/service.py` | Move logistics calculations to a reusable logistics service so tracking and admin can share them without coupling. |
+| `app/services/pod_reingest_reporting.py` | `services/admin/consignments/pod_reingest.py` or `operations/scripts/reingest/` | POD reingest reporting is an admin/ops concern. |
+| External `requests` usage in routes | `packages/infrastructure/http/client.py` and module services | Keep external HTTP concerns outside controllers. |
+| Local POD filesystem logic | `packages/infrastructure/storage/pod_storage.py` | One storage abstraction reusable by admin and tracking, with local files now and object storage later. |
 
 ### 5.7 Static assets
 
 | Current path | Final location | Final purpose |
 | --- | --- | --- |
-| `app/static/images/*` | `app/static/assets/images/*` | Centralized images. |
-| `app/static/fonts/*` | `app/static/assets/fonts/*` | Centralized fonts. |
-| `app/static/css/*` | `app/static/css/base`, `components`, `layouts`, `utilities`, `themes` | Normalize legacy global CSS. |
-| `app/static/css/components/variables.css` and `app/static/css/variables.css` | `app/static/css/themes/variables.css` | Single CSS variables source. |
-| `app/static/assets/css/*` | Merge into `app/static/css/*` | Avoid two CSS roots. |
-| `app/static/assets/css/pages/*` | `app/static/css/pages/<page>/<page>.css` | Page-level CSS grouped consistently. |
-| `app/static/js/index.js`, `main.js`, `forms.js`, `newsletter.js` | `app/static/js/pages/website/` and `app/static/js/shared/` | Separate page-specific and shared behaviors. |
-| `app/static/js/consignments.js` | `app/static/js/admin/consignments.js` | Admin consignment behavior. |
-| `app/static/js/performance.js`, `animations.js`, `menu.js` | `app/static/js/shared/` or `app/static/js/components/` | Shared UI scripts. |
+| `app/static/images/*` | `apps/web/static/assets/images/*` | Centralized images. |
+| `app/static/fonts/*` | `apps/web/static/assets/fonts/*` | Centralized fonts. |
+| `app/static/css/*` | `apps/web/static/css/base`, `components`, `layouts`, `utilities`, `themes` | Normalize legacy global CSS. |
+| `app/static/css/components/variables.css` and `app/static/css/variables.css` | `apps/web/static/css/themes/variables.css` | Single CSS variables source. |
+| `app/static/assets/css/*` | Merge into `apps/web/static/css/*` | Avoid two CSS roots. |
+| `app/static/assets/css/pages/*` | `apps/web/static/css/pages/<page>/<page>.css` | Page-level CSS grouped consistently. |
+| `app/static/js/index.js`, `main.js`, `forms.js`, `newsletter.js` | `apps/web/static/js/pages/` and `apps/web/static/js/shared/` | Separate page-specific and shared behaviors. |
+| `app/static/js/consignments.js` | `apps/admin/static/js/consignments.js` | Admin consignment behavior. |
+| `app/static/js/performance.js`, `animations.js`, `menu.js` | `apps/web/static/js/shared/` or `apps/web/static/js/components/` | Shared UI scripts. |
 
 ### 5.8 Tests, contracts, and tooling
 
@@ -367,16 +398,16 @@ The proposed final structure is below. It is intentionally designed as a modular
 
 ### Phase 1: Extract app bootstrap without behavior changes
 
-- Create `app/extensions.py` for `db`, `limiter`, and cache.
-- Create `app/factory.py` and keep `app/__init__.py` as a compatibility import.
-- Move health routes, error handlers, and security headers to `app/core/`.
-- Move database URL logic to `app/config/database.py`.
+- Create shared extension modules under `packages/infrastructure/` for database, rate limiting, and cache.
+- Create `apps/web/factory.py` first and keep `run.py`/legacy imports compatible; add `apps/admin/factory.py`, `apps/tracking/factory.py`, and `apps/api_gateway/factory.py` when ready.
+- Move health routes, error handlers, and security headers to `packages/platform/`.
+- Move database URL logic to `packages/platform/config/database.py`.
 - Run the full pytest suite after each small extraction.
 
 ### Phase 2: Introduce feature modules while preserving routes
 
-- Create `app/modules/admin`, `app/modules/website`, and `app/modules/tracking`.
-- Move blueprints into modules, keeping existing URL paths stable.
+- Create app boundaries in `apps/admin`, `apps/web`, and `apps/tracking`, with reusable business logic in matching `services/*` packages.
+- Move routes into app boundaries, keeping existing URL paths stable during the first migration.
 - Add service/repository layers behind existing handlers.
 - Keep compatibility imports from old paths until tests and imports are updated.
 
@@ -389,16 +420,16 @@ The proposed final structure is below. It is intentionally designed as a modular
 
 ### Phase 4: Consolidate templates and static assets
 
-- Choose global template structure under `app/templates/`.
-- Move blueprint-local templates into `app/templates/website`, `app/templates/pages`, and `app/templates/tracking`.
+- Choose app-specific template roots under `apps/web/templates`, `apps/admin/templates`, and `apps/tracking/templates`.
+- Move blueprint-local templates into the owning app: website pages under `apps/web/templates`, admin pages under `apps/admin/templates`, and tracking pages under `apps/tracking/templates`.
 - Update `render_template` calls.
-- Merge `app/static/assets/css` and `app/static/css` into one convention.
+- Merge legacy and new CSS into each owning app static tree, starting with `apps/web/static/css`.
 - Validate pages visually and with Playwright smoke tests.
 
 ### Phase 5: Formalize APIs, contracts, and tests
 
 - Move schemas from `specs/` and `track/api-contract.json` into `contracts/`.
-- Introduce `app/modules/api/v1` for versioned JSON endpoints.
+- Introduce `apps/api_gateway/v1` for versioned JSON endpoints.
 - Reorganize tests into `unit`, `integration`, `contract`, and `e2e`.
 - Add focused unit tests for services and repositories.
 
@@ -414,22 +445,22 @@ The proposed final structure is below. It is intentionally designed as a modular
 
 | Business capability | Owning module | Owns |
 | --- | --- | --- |
-| Public website pages | `app/modules/website` | Home, service pages, contact form, newsletter signup. |
-| Tracking | `app/modules/tracking` | Tracking page, tracking API, POD download, consignment read model. |
-| Admin | `app/modules/admin` | Login/logout, dashboard, consignment management, lead management, backups. |
-| API contracts | `app/modules/api/v1` + `contracts/` | Stable JSON endpoints and schemas. |
-| Infrastructure | `app/infrastructure` | Database maintenance, cache, storage, HTTP clients. |
-| Core platform | `app/core` | Health, errors, logging, rate limits, security headers, startup hooks. |
+| Public website pages | `apps/web` + `services/website` | Home, service pages, contact form, newsletter signup. |
+| Tracking | `apps/tracking` + `services/tracking` | Tracking page, tracking API, POD download, consignment read model. |
+| Admin | `apps/admin` + `services/admin` | Login/logout, dashboard, consignment management, lead management, backups. |
+| API contracts | `apps/api_gateway/v1` + `contracts/` | Stable JSON endpoints and schemas. |
+| Infrastructure | `packages/infrastructure` | Database maintenance, cache, storage, HTTP clients. |
+| Core platform | `packages/platform` | Health, errors, logging, rate limits, security headers, startup hooks. |
 
 ## 8. Acceptance criteria for the conversion
 
-- `create_app()` remains the single application factory entrypoint.
+- `create_app()` remains backward-compatible while app-specific factories are introduced for web, admin, tracking, and API boundaries.
 - Existing public URLs continue to work unless intentionally redirected.
 - Existing admin URLs continue to work unless intentionally versioned or renamed.
 - Route handlers no longer contain large business workflows or direct serialization logic.
 - Tests are organized by layer and pass in CI/local development.
-- There is one canonical location for templates.
-- There is one canonical CSS architecture under `app/static/css`.
+- Templates live with the app boundary that renders them.
+- CSS is organized by app boundary, with the public website using `apps/web/static/css` as the first canonical convention.
 - Runtime artifacts are ignored and no longer treated as source structure.
 - Operational scripts are grouped and documented.
 - API schemas/contracts are versioned and tested.
@@ -438,12 +469,12 @@ The proposed final structure is below. It is intentionally designed as a modular
 
 The safest first code slice is the bootstrap extraction:
 
-1. Add `app/extensions.py`.
-2. Move cache shim into `app/infrastructure/cache/filesystem_cache.py`.
-3. Move security header registration into `app/core/security_headers.py`.
-4. Move health routes into `app/core/health.py`.
-5. Move error handlers into `app/core/errors.py`.
+1. Add shared extension modules under `packages/infrastructure/`.
+2. Move cache shim into `packages/infrastructure/cache/filesystem_cache.py`.
+3. Move security header registration into `packages/platform/security_headers.py`.
+4. Move health routes into `packages/platform/health.py`.
+5. Move error handlers into `packages/platform/errors.py`.
 6. Keep all imports backward-compatible.
 7. Run the current pytest suite.
 
-This slice reduces risk because it does not change public templates, routes, database schema, or user-facing behavior.
+This slice reduces risk because it creates service-ready boundaries without changing public templates, routes, database schema, or user-facing behavior.
