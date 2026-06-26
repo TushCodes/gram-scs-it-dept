@@ -611,7 +611,7 @@
         <div class="alt-offcanvas__section">
           <h3>Company</h3>
           <a href="{{ url_for('main.index') }}">Home</a>
-          <a href="{{ url_for('main.about') }}">About Us</a>
+          <a href="{{ url_for('pages.show_page', page='about') }}">About Us</a>
           <a href="{{ url_for('pages.show_page', page='network') }}">Network</a>
           <a href="{{ url_for('pages.show_page', page='trade-partners') }}">Trade Partners</a>
           <a href="{{ url_for('main.contact') }}">Contact Us</a>
@@ -776,7 +776,7 @@
             performance.
           </p>
           <div style="display:flex;flex-wrap:wrap;gap:1rem;margin-top:2rem;">
-            <a href="{{ url_for('main.about') }}" class="btn-lime" style="font-size:0.9rem;padding:0.7rem 1.6rem;">
+            <a href="{{ url_for('pages.show_page', page='about') }}" class="btn-lime" style="font-size:0.9rem;padding:0.7rem 1.6rem;">
               Learn More <i class="fa fa-arrow-right" aria-hidden="true"></i>
             </a>
             <a href="{{ url_for('pages.show_page', page='network') }}" class="btn-ghost" style="font-size:0.9rem;padding:0.7rem 1.6rem;">
@@ -938,7 +938,7 @@
       <div class="alt-footer__col">
         <h4>Quick Links</h4>
         <a href="{{ url_for('main.index') }}">Home</a>
-        <a href="{{ url_for('main.about') }}">About Us</a>
+        <a href="{{ url_for('pages.show_page', page='about') }}">About Us</a>
         <a href="{{ url_for('pages.show_page', page='network') }}">Network</a>
         <a href="{{ url_for('pages.show_page', page='trade-partners') }}">Trade Partners</a>
         <a href="{{ url_for('main.contact') }}">Contact Us</a>
