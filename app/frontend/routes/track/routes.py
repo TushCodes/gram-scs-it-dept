@@ -10,7 +10,7 @@ from flask import jsonify, send_file, current_app
 from sqlalchemy.exc import DatabaseError, OperationalError
 
 from app.models import db
-from app.track.models import TrackConsignment
+from app.frontend.routes.track.models import TrackConsignment
 
 logger = logging.getLogger(__name__)
 

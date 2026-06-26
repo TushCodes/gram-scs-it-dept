@@ -39,7 +39,7 @@ class TrackRouteTests(unittest.TestCase):
         self.assertIn(b"Enter Consignment Number", response.data)
 
     def test_invalid_consignment_logs_and_returns_message(self):
-        with patch("app.track.routes.logger") as mock_logger:
+        with patch("app.frontend.routes.track.routes.logger") as mock_logger:
             response = self.client.post("/track", data={"consignment_number": "bad!!"})
 
         self.assertEqual(response.status_code, 200)
@@ -53,7 +53,7 @@ class TrackRouteTests(unittest.TestCase):
         fake_model = MagicMock()
         fake_model.query = fake_query
 
-        with patch("app.track.routes.TrackConsignment", fake_model), patch("app.track.routes.logger") as mock_logger:
+        with patch("app.frontend.routes.track.routes.TrackConsignment", fake_model), patch("app.frontend.routes.track.routes.logger") as mock_logger:
             response = self.client.post("/track", data={"consignment_number": "HOME123"})
 
         self.assertEqual(response.status_code, 200)
@@ -70,9 +70,9 @@ class TrackRouteTests(unittest.TestCase):
         fake_model.query = fake_query
 
         with (
-            patch("app.track.routes.TrackConsignment", fake_model),
-            patch("app.track.routes.db.session.commit") as mock_commit,
-            patch("app.track.routes.logger") as mock_logger,
+            patch("app.frontend.routes.track.routes.TrackConsignment", fake_model),
+            patch("app.frontend.routes.track.routes.db.session.commit") as mock_commit,
+            patch("app.frontend.routes.track.routes.logger") as mock_logger,
         ):
             response = self.client.post("/track", data={"consignment_number": "ABC123"})
 
@@ -97,7 +97,7 @@ class TrackRouteTests(unittest.TestCase):
         fake_model = MagicMock()
         fake_model.query = fake_query
 
-        with patch("app.track.routes.TrackConsignment", fake_model):
+        with patch("app.frontend.routes.track.routes.TrackConsignment", fake_model):
             response = self.client.get("/api/track/abc123")
 
         self.assertEqual(response.status_code, 200)
@@ -114,7 +114,7 @@ class TrackRouteTests(unittest.TestCase):
         fake_model = MagicMock()
         fake_model.query = fake_query
 
-        with patch("app.track.routes.TrackConsignment", fake_model):
+        with patch("app.frontend.routes.track.routes.TrackConsignment", fake_model):
             response = self.client.get("/api/track/MISSING1")
 
         self.assertEqual(response.status_code, 404)
