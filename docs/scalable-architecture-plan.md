@@ -20,22 +20,23 @@ In simple terms: keep the browser-facing work in `frontend/`, then organize all 
 2. **Frontend remains separate.** Templates, CSS, JavaScript, images, fonts, admin UI assets, website pages, and the tracking widget UI move under `frontend/`.
 3. **No separate `api/` folder.** API endpoints, page-serving routes, widget routes, and form routes live inside `routes/`.
 4. **No separate tracking folder.** Tracking route behavior is mixed into the main route/service/database structure.
-5. **No separate website folder.** Website/contact/newsletter behavior is mixed into the main route/service/database structure.
+5. **No separate website folder.** Website/contact behavior is mixed into the main route/service/database structure.
 6. **No separate Supabase source folder.** Supabase access is part of `database/` and feature repositories, not a standalone runtime folder.
-7. **`shared/` is renamed to `common/`.** Pure reusable helpers live in `common/`.
-8. **`operations/` is eliminated.** Maintenance, backup, reingest, database, and local helper scripts live under `services/` or `tools/`, depending on whether they are runtime/business services or developer utilities.
-9. **CORS connects frontend and server-side routes.** Server route modules explicitly allow configured frontend origins.
-10. **Supabase is the shared source of truth.** Admin management and shipment tracking both use the same Supabase PostgreSQL database.
-11. **`/track` is widget-oriented.** The server keeps a `/track` route for the widget. Client-side UI and behavior stay visually and functionally unchanged.
-12. **No cache module.** Remove cache abstractions and route caching from the target structure.
-13. **No shims.** Move imports directly and delete old modules in the same slice when safe.
+7. **Newsletter is removed from the target project.** Do not create newsletter routes, services, database modules, UI flows, contracts, or tests in the final architecture.
+8. **`shared/` is renamed to `common/`.** Pure reusable helpers live in `common/`.
+9. **`operations/` is eliminated.** Maintenance, backup, reingest, database, and local helper scripts live under `services/` or `tools/`, depending on whether they are runtime/business services or developer utilities.
+10. **CORS connects frontend and server-side routes.** Server route modules explicitly allow configured frontend origins.
+11. **Supabase is the shared source of truth.** Admin management and shipment tracking both use the same Supabase PostgreSQL database.
+12. **`/track` is widget-oriented.** The server keeps a `/track` route for the widget. Client-side UI and behavior stay visually and functionally unchanged.
+13. **No cache module.** Remove cache abstractions and route caching from the target structure.
+14. **No shims.** Move imports directly and delete old modules in the same slice when safe.
 
 ## 2. Current repository position
 
 | Current path | Current responsibility | Updated concern |
 | --- | --- | --- |
 | `app/__init__.py` | Flask factory, config loading, database setup, rate limiting, cache setup, security headers, health routes, error handlers, seeding, blueprint registration. | Split into top-level server bootstrap, configuration, extension setup, route registration, and security modules. Cache code should be removed. |
-| `app/models.py` | SQLAlchemy models for consignments, leads, and newsletter subscribers. | Replace runtime database access with Supabase-backed repositories under `database/` and feature services. |
+| `app/models.py` | SQLAlchemy models for consignments and leads. | Replace runtime database access with Supabase-backed repositories under `database/` and feature services. |
 | `app/admin/` | Admin auth, admin routes, consignment controller, backups, leads. | Move server-side admin behavior into `admin/`; admin UI assets move to `frontend/`. |
 | `app/frontend/routes/` | Server-rendered public pages, dynamic pages, and tracking page/routes. | Move browser UI into `frontend/`; move route behavior into `routes/`. |
 | `app/templates/` and blueprint templates | Admin, layouts, errors, partials, public pages, tracking template. | Move UI templates/views into `frontend/`. Server routes should render or return responses using frontend-owned templates where needed. |
@@ -81,7 +82,6 @@ In simple terms: keep the browser-facing work in `frontend/`, then organize all 
 │   ├── admin.py
 │   ├── contact.py
 │   ├── health.py
-│   ├── newsletter.py
 │   ├── pages.py
 │   ├── track.py
 │   └── errors.py
@@ -96,7 +96,6 @@ In simple terms: keep the browser-facing work in `frontend/`, then organize all 
 │   ├── __init__.py
 │   ├── consignment_service.py
 │   ├── contact_service.py
-│   ├── newsletter_service.py
 │   ├── pod_service.py
 │   ├── backup_service.py
 │   ├── reingest_service.py
@@ -110,7 +109,6 @@ In simple terms: keep the browser-facing work in `frontend/`, then organize all 
 │   ├── client.py
 │   ├── consignments.py
 │   ├── leads.py
-│   ├── newsletter.py
 │   ├── storage.py
 │   ├── migrations/
 │   ├── policies/
@@ -205,7 +203,6 @@ In simple terms: keep the browser-facing work in `frontend/`, then organize all 
 | Supabase client creation | `database/client.py` | Create and configure the Supabase client as normal database infrastructure. |
 | `Consignment` access | `database/consignments.py`, `admin/consignments.py`, `services/consignment_service.py`, `routes/track.py` | Admin and tracking both use the same Supabase consignment table. |
 | `Lead` access | `database/leads.py`, `admin/leads.py`, `services/contact_service.py` | Contact submission and admin lead management share Supabase. |
-| `NewsletterSubscriber` access | `database/newsletter.py`, `services/newsletter_service.py` | Newsletter writes go to Supabase. |
 | POD/storage access | `database/storage.py`, `services/pod_service.py` | Keep storage access near database infrastructure and POD rules in services. |
 | SQLite/local DB helpers | `database/legacy/` during migration, then delete | Preserve only if needed for one-time migration; do not keep as runtime source of truth. |
 | `scripts/consignment_add_columns.sql` | `database/migrations/` | Convert to Supabase migration SQL. |
@@ -247,12 +244,11 @@ In simple terms: keep the browser-facing work in `frontend/`, then organize all 
 | `track/api-contract.json` | `contracts/tracking-widget/` | Preserve contract details for tracking widget route responses. |
 | Supabase examples inside standalone `track/` prototype | Extract useful notes into `docs/architecture/` or delete | Do not keep prototype server code in runtime source. |
 
-### 5.6 Website/contact/newsletter behavior
+### 5.6 Website/contact behavior
 
 | Current file/code | Final location | Plan |
 | --- | --- | --- |
 | Contact form server code in `app/frontend/routes/main/routes.py` | `routes/contact.py`, `services/contact_service.py`, `database/leads.py` | Server validates and writes contact leads to Supabase. |
-| Newsletter server code in `app/frontend/routes/main/routes.py` | `routes/newsletter.py`, `services/newsletter_service.py`, `database/newsletter.py` | Server validates and writes newsletter subscribers to Supabase. |
 | Marketing page route rendering | `routes/pages.py` rendering frontend-owned templates | Keep browser output the same without creating a separate website folder. |
 
 ### 5.7 Services, contracts, and tests
@@ -270,7 +266,7 @@ In simple terms: keep the browser-facing work in `frontend/`, then organize all 
 
 ### Phase 0: Confirm behavior and Supabase contract
 
-- Capture the current admin, contact/newsletter, and tracking-widget behavior before moving code.
+- Capture the current admin, contact, and tracking-widget behavior before moving code.
 - Confirm Supabase table names, columns, indexes, storage bucket names, and row-level security expectations.
 - Decide the exact allowed CORS origins for local development, staging, and production.
 - Identify every `cache.cached(...)` usage and mark it for deletion.
@@ -286,14 +282,14 @@ In simple terms: keep the browser-facing work in `frontend/`, then organize all 
 ### Phase 2: Add Supabase data access inside `database/`
 
 - Add `database/client.py` for Supabase configuration and client creation.
-- Add database modules for consignments, leads, newsletter, and storage.
+- Add database modules for consignments, leads, and storage.
 - Move schema SQL, policies, seeds, and migrations into `database/`.
 - Update admin and tracking services to use the same Supabase consignment source.
 
 ### Phase 3: Split server-side concerns without over-separating
 
 - Move admin auth, policies, and admin business rules into `admin/`.
-- Move HTTP endpoints into `routes/`, including `routes/admin.py`, `routes/contact.py`, `routes/newsletter.py`, `routes/pages.py`, and `routes/track.py`.
+- Move HTTP endpoints into `routes/`, including `routes/admin.py`, `routes/contact.py`, `routes/pages.py`, and `routes/track.py`.
 - Move reusable business rules into `services/`.
 - Keep URL behavior stable, especially `/track` for the widget.
 
@@ -307,7 +303,7 @@ In simple terms: keep the browser-facing work in `frontend/`, then organize all 
 ### Phase 5: Contracts and tests
 
 - Move schemas/contracts into `contracts/` by route/domain area.
-- Add/adjust route tests for `/track`, admin, contact, newsletter, health, and error behavior.
+- Add/adjust route tests for `/track`, admin, contact, health, and error behavior.
 - Add/adjust database tests for Supabase repositories.
 - Add/adjust contract tests for tracking widget responses.
 - Add/adjust frontend/e2e tests for admin flows and `/track` widget behavior.
@@ -339,6 +335,7 @@ In simple terms: keep the browser-facing work in `frontend/`, then organize all 
 - Frontend is separated at the top level under `frontend/`.
 - Server-side code is organized by concern using top-level folders such as `routes/`, `admin/`, `services/`, `database/`, `config/`, `extensions/`, and `common/`.
 - No separate `api/`, `tracking`, `website`, `supabase`, `shared`, or `operations` source folder is introduced.
+- Newsletter route, service, database module, UI flow, contract, and tests are not introduced in the target project.
 - CORS is explicitly configured for approved frontend origins.
 - Admin and tracking use the same Supabase database tables through `database/` repositories and services.
 - No admin-to-tracking API bridge is introduced.
