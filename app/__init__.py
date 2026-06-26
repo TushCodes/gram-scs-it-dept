@@ -378,9 +378,9 @@ def create_app():
         logger.info('AUTO_CREATE_TABLES disabled. Skipping db.create_all() at startup.')
         logger.info('Consignment schema repair runs asynchronously in production.')
 
-    from app.main.routes import main_bp
-    from app.track.routes import track_bp
-    from app.pages.routes import pages_bp
+    from app.frontend.routes.main.routes import main_bp
+    from app.frontend.routes.track.routes import track_bp
+    from app.frontend.routes.pages.routes import pages_bp
     from app.admin import admin_bp
 
     app.register_blueprint(main_bp)
