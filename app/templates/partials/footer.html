@@ -3,7 +3,7 @@
     <h5 class="text-uppercase mb-3 footer-heading">Quick Links</h5>
     <ul class="list-unstyled footer-links">
       <li class="mb-2"><a href="{{ url_for('main.index') }}">Home</a></li>
-      <li class="mb-2"><a href="{{ url_for('main.about') }}">About Us</a></li>
+      <li class="mb-2"><a href="{{ url_for('pages.show_page', page='about') }}">About Us</a></li>
       <li class="mb-2"><a href="{{ url_for('pages.show_page', page='network') }}">Network</a></li>
       <li class="mb-2"><a href="{{ url_for('pages.show_page', page='trade-partners') }}">Trade Partners</a></li>
       <li class="mb-2"><a href="{{ url_for('main.contact') }}">Contact Us</a></li>
