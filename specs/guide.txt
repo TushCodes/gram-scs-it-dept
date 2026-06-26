@@ -1,2 +1,0 @@
-consignment-list-response.schema.json is a JSON Schema, which is a concept of API testing.
-It majorly provides a predefined structure to our API responses, so that there aren't any schema validation related issues
