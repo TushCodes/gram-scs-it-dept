@@ -432,8 +432,8 @@ def create_app():
         try:
             if not app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite://'):
                 ensure_consignment_columns_async(app.config['SQLALCHEMY_DATABASE_URI'], logger)
-        except Exception:
-            logger.exception('Failed to start consignment schema repair')
+        except Exception as exc:
+            logger.warning('Failed to start consignment schema repair: %s', exc)
 
         with app.app_context():
             db.create_all()
@@ -442,8 +442,8 @@ def create_app():
         try:
             if not app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite://'):
                 ensure_consignment_columns_async(app.config['SQLALCHEMY_DATABASE_URI'], logger)
-        except Exception:
-            logger.exception('Failed to start consignment schema repair')
+        except Exception as exc:
+            logger.warning('Failed to start consignment schema repair: %s', exc)
 
         logger.info('AUTO_CREATE_TABLES disabled. Skipping db.create_all() at startup.')
         logger.info('Consignment schema repair runs asynchronously in production.')

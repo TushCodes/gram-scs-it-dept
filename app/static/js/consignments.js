@@ -828,30 +828,32 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
 
-            // Read the current row data to determine whether the POD exists on the server
+            // Read the current row data to determine whether the POD exists on the server.
             var rowData = getRowDataFromTr(currentEditingRow) || {};
+            var rowId = Number(currentEditingRow.dataset.id) || null;
+            var hasPodPayload = !!(rowData.pod_image || rowData.pod_file_data || rowData.pod_file_name);
 
-            // If the row only has a staged upload (client-side) but no persisted `pod_image`,
-            // clear the staged preview locally instead of calling the DELETE endpoint.
-            if (!rowData.pod_image && (rowData.pod_file_data || rowData.pod_file_name)) {
-                // Clear staged upload
-                resetPodUploadStaging();
-                try {
-                    rowData.pod_file_data = null;
-                    rowData.pod_file_name = null;
-                    rowData.pod_file_type = null;
-                    currentEditingRow.dataset.row = JSON.stringify(rowData);
-                } catch (e) {}
-                modalPodFile.value = '';
-                modalPodPreview.innerHTML = '<em class="text-muted">No POD uploaded.</em>';
-                modalPodView.style.display = 'none';
-                showStatus('Cleared staged POD (not yet saved).', 'info');
+            if (!rowId || rowId <= 0) {
+                if (hasPodPayload) {
+                    resetPodUploadStaging();
+                    try {
+                        rowData.pod_file_data = null;
+                        rowData.pod_file_name = null;
+                        rowData.pod_file_type = null;
+                        currentEditingRow.dataset.row = JSON.stringify(rowData);
+                    } catch (e) {}
+                    modalPodFile.value = '';
+                    modalPodPreview.innerHTML = '<em class="text-muted">No POD uploaded.</em>';
+                    modalPodView.style.display = 'none';
+                    showStatus('Cleared staged POD (not yet saved).', 'info');
+                } else {
+                    modalPodPreview.innerHTML = '<em class="text-muted">No POD uploaded.</em>';
+                    modalPodView.style.display = 'none';
+                }
                 return;
             }
 
-            var rowId = Number(currentEditingRow.dataset.id) || null;
-            if (!rowId || rowId <= 0) {
-                // No persisted row id — nothing to delete server-side
+            if (!hasPodPayload) {
                 modalPodPreview.innerHTML = '<em class="text-muted">No POD uploaded.</em>';
                 modalPodView.style.display = 'none';
                 return;
