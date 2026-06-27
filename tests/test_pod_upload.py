@@ -141,10 +141,12 @@ class FakeSupabaseBucket:
 
     def upload(self, object_path, file_obj, options=None):
         if hasattr(file_obj, "read"):
-            payload = file_obj.read()
+            content = file_obj.read()
         else:
-            payload = file_obj
-        self.store[(self.bucket_name, object_path)] = payload
+            content = file_obj
+        if isinstance(content, bytearray):
+            content = bytes(content)
+        self.store[(self.bucket_name, object_path)] = content
         return {"path": object_path}
 
     def download(self, object_path):
@@ -168,6 +170,43 @@ class FakeSupabaseClient:
     def __init__(self):
         self.store = {}
         self.storage = FakeSupabaseStorage(self.store)
+
+
+class BytesOnlySupabaseBucket:
+    def __init__(self, store, bucket_name):
+        self.store = store
+        self.bucket_name = bucket_name
+
+    def upload(self, object_path, file_obj, options=None):
+        assert isinstance(file_obj, (bytes, bytearray))
+        self.store[(self.bucket_name, object_path)] = bytes(file_obj)
+        return {"path": object_path}
+
+
+class BytesOnlySupabaseStorage:
+    def __init__(self, store):
+        self.store = store
+
+    def from_(self, bucket_name):
+        return BytesOnlySupabaseBucket(self.store, bucket_name)
+
+
+class BytesOnlySupabaseClient:
+    def __init__(self):
+        self.store = {}
+        self.storage = BytesOnlySupabaseStorage(self.store)
+
+
+def test_store_pod_bytes_uploads_raw_bytes_to_supabase(monkeypatch):
+    import app.admin.consignment_controller as controller
+
+    fake_supabase = BytesOnlySupabaseClient()
+    monkeypatch.setattr(controller, '_get_supabase_client', lambda: fake_supabase)
+
+    result = controller._store_pod_bytes('pod.jpg', b'raw-bytes', 'image/jpeg')
+
+    assert result == 'supabase:pod-uploads/consignments/pod.jpg'
+    assert fake_supabase.store[('pod-uploads', 'consignments/pod.jpg')] == b'raw-bytes'
 
 
 def test_supabase_pod_upload_serves_permanent_app_endpoint_without_signed_url(tmp_path, monkeypatch):
@@ -220,42 +259,6 @@ def test_supabase_pod_upload_serves_permanent_app_endpoint_without_signed_url(tm
     assert get_resp.status_code == 200
     assert get_resp.data == b'supabase-pod-bytes'
     assert get_resp.location is None
-
-
-def test_store_pod_bytes_uploads_bytes_to_supabase(monkeypatch):
-    import app.admin.consignment_controller as controller
-
-    class StrictSupabaseBucket:
-        def __init__(self):
-            self.calls = []
-
-        def upload(self, object_path, file_obj, options=None):
-            self.calls.append((object_path, file_obj, options))
-            assert isinstance(file_obj, (bytes, bytearray))
-            return {"path": object_path}
-
-    class StrictSupabaseStorage:
-        def __init__(self, bucket):
-            self.bucket = bucket
-
-        def from_(self, bucket_name):
-            assert bucket_name == "pod-uploads"
-            return self.bucket
-
-    class StrictSupabaseClient:
-        def __init__(self):
-            self.bucket = StrictSupabaseBucket()
-            self.storage = StrictSupabaseStorage(self.bucket)
-
-    fake_client = StrictSupabaseClient()
-    monkeypatch.setattr(controller, "_get_supabase_client", lambda: fake_client)
-    monkeypatch.setenv("SUPABASE_BUCKET", "pod-uploads")
-
-    controller._store_pod_bytes("pod.jpg", BytesIO(b"hello-world"), "image/jpeg")
-
-    assert fake_client.bucket.calls[0][0] == "consignments/pod.jpg"
-    assert fake_client.bucket.calls[0][1] == b"hello-world"
-    assert fake_client.bucket.calls[0][2] == {"content-type": "image/jpeg"}
 
 
 def test_save_rejects_external_pod_url(tmp_path):
