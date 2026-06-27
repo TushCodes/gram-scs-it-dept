@@ -1,6 +1,8 @@
 import os
 import importlib
+import tempfile
 import unittest
+from pathlib import Path
 
 from app import _require_database_uri, _should_auto_create_tables
 import app.config as app_config
@@ -35,6 +37,26 @@ class DatabaseUriConfigTests(unittest.TestCase):
         os.environ["DATABASE_URL"] = "postgres://user:pass@localhost:5432/appdb"
         result = _require_database_uri()
         self.assertEqual(result, "postgresql://user:pass@localhost:5432/appdb")
+
+    def test_sqlite_database_directory_is_created_before_app_startup(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            sqlite_path = Path(tmp_dir) / "nested" / "db" / "app.db"
+            sqlite_url = f"sqlite:///{sqlite_path}"
+
+            from app import _ensure_sqlite_parent_directory
+
+            _ensure_sqlite_parent_directory(sqlite_url)
+
+            self.assertTrue(sqlite_path.parent.exists())
+
+    def test_sqlite_database_uri_is_normalized_to_absolute_path(self):
+        from app import _normalize_sqlite_database_uri
+
+        normalized = _normalize_sqlite_database_uri("sqlite:///./instance/dev.db")
+
+        self.assertTrue(normalized.startswith("sqlite:///"))
+        self.assertIn("instance/dev.db", normalized)
+        self.assertNotEqual(normalized, "sqlite:///./instance/dev.db")
 
     def test_require_database_uri_adds_sslmode_for_supabase_pooler(self):
         os.environ["DATABASE_URL"] = (
