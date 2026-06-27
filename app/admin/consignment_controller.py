@@ -43,14 +43,29 @@ def _get_supabase_client():
         return None
 
 
+def _normalize_pod_bytes(file_bytes):
+    if file_bytes is None:
+        return b""
+    if hasattr(file_bytes, "read"):
+        file_bytes = file_bytes.read()
+    if isinstance(file_bytes, memoryview):
+        return file_bytes.tobytes()
+    if isinstance(file_bytes, bytearray):
+        return bytes(file_bytes)
+    if isinstance(file_bytes, bytes):
+        return file_bytes
+    raise TypeError("POD upload content must be bytes-like")
+
+
 def _store_pod_bytes(filename, file_bytes, content_type=None, bucket_name=None):
+    normalized_bytes = _normalize_pod_bytes(file_bytes)
     supa = _get_supabase_client()
     if supa:
         bucket = bucket_name or os.getenv("SUPABASE_BUCKET", "pod-uploads")
         object_path = f"consignments/{filename}"
         supa.storage.from_(bucket).upload(
             object_path,
-            io.BytesIO(file_bytes),
+            normalized_bytes,
             {"content-type": content_type or "application/octet-stream"},
         )
         return f"supabase:{bucket}/{object_path}"
@@ -59,7 +74,7 @@ def _store_pod_bytes(filename, file_bytes, content_type=None, bucket_name=None):
     os.makedirs(upload_folder, exist_ok=True)
     dest_path = os.path.join(upload_folder, filename)
     with open(dest_path, "wb") as handle:
-        handle.write(file_bytes)
+        handle.write(normalized_bytes)
     return filename
 
 
